@@ -59,16 +59,17 @@ function inline(text,parent){HUDRender.inline(text,parent);} // No terminal text
 // Raw screen text. Box-drawn tables keep their columns: they never wrap and
 // shrink to fit the panel, scrolling sideways past a readable floor. Divider
 // rules clip to the panel. Other lines wrap under their own indent and bullet,
-// so wrapped text stays aligned instead of falling back to the left edge.
-const BOX_LINE=/^\s*[┌├└│╭╰┃╞╘┐┤┘╮╯]/,RULE_LINE=/^\s*[─━]{8,}\s*$/,HANG=/^([-*•●⎿]|\d{1,3}[.)])\s+/;
+// so wrapped text stays aligned instead of falling back to the left edge. The
+// indent is capped so text Claude right-aligns on a wide screen still fits.
+const BOX_START=/^\s*[┌├│╭┃╞┐┤┘╮╯]/,BOX_LINE=/^\s*[┌├└│╭╰┃╞╘┐┤┘╮╯]/,RULE_LINE=/^\s*[─━]{8,}\s*$/,HANG=/^([-*•●⎿]|\d{1,3}[.)])\s+/;
 function terminalText(text){
   const pre=el('pre',undefined,'term'),lines=text.split('\n');
   for(let i=0;i<lines.length;i++){
     const line=lines[i];
-    if(BOX_LINE.test(line)){const rows=[];while(i<lines.length&&(BOX_LINE.test(lines[i])||RULE_LINE.test(lines[i])&&BOX_LINE.test(lines[i+1]||'')))rows.push(lines[i++]);i--;pre.append(el('span',rows.join('\n'),'term-box'));continue;}
+    if(BOX_START.test(line)){const rows=[];while(i<lines.length&&(BOX_LINE.test(lines[i])||RULE_LINE.test(lines[i])&&BOX_LINE.test(lines[i+1]||'')))rows.push(lines[i++]);i--;pre.append(el('span',rows.join('\n'),'term-box'));continue;}
     if(RULE_LINE.test(line)){pre.append(el('span',line.trim(),'term-rule'));continue;}
     const body=line.trimStart(),indent=line.length-body.length,hang=(HANG.exec(body)?.[0].length)||0,row=el('span',body||' ','term-line');
-    row.style.paddingLeft=`${indent+hang}ch`;if(hang)row.style.textIndent=`-${hang}ch`;pre.append(row);
+    row.style.paddingLeft=`min(${indent+hang}ch, 40%)`;if(hang)row.style.textIndent=`-${hang}ch`;pre.append(row);
   }
   return pre;
 }
