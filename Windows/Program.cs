@@ -98,14 +98,23 @@ sealed class Bubble : Form
 {
     public Action? Toggle, MoveEnded;
     public Action<int>? Hotkey;
-    public int Count;
+    // The badge counts only the most urgent state and takes its color: red needs
+    // input, blue unread. An amber arc turns around the ring while agents work.
+    public int Count; public string Tone = ""; public bool Working;
+    float spin; readonly System.Windows.Forms.Timer spinner = new() { Interval = 50 };
+    public static readonly Color Red = Color.FromArgb(255,107,107), Blue = Color.FromArgb(106,169,255), Amber = Color.FromArgb(242,184,75);
     public Rectangle BadgeBounds
     {
         get { float scale = ClientSize.Width / 64f; return new Rectangle((int)Math.Round(41*scale), (int)Math.Round(3*scale), (int)Math.Round(20*scale), (int)Math.Round(20*scale)); }
     }
-    public void SetBadgeCount(int value)
+    public void SetBadge(int value, string tone, bool working)
     {
-        Count = Math.Max(0,value); UpdateShape(); Invalidate();
+        value = Math.Max(0,value);
+        if (value == Count && tone == Tone && working == Working) return;
+        Count = value; Tone = tone; Working = working;
+        // Only animate while something works; respect "show animations" being off.
+        spinner.Enabled = working && SystemInformation.UIEffectsEnabled;
+        UpdateShape(); Invalidate();
     }
     void UpdateShape()
     {
@@ -125,6 +134,7 @@ sealed class Bubble : Form
         FormBorderStyle = FormBorderStyle.None; ShowInTaskbar = false; TopMost = true;
         Size = new Size(64, 64); BackColor = Color.FromArgb(24, 27, 34); DoubleBuffered = true;
         Cursor = Cursors.Hand;
+        spinner.Tick += (_, _) => { spin = (spin + 7.5f) % 360; Invalidate(); };
     }
     protected override void OnSizeChanged(EventArgs e)
     {
@@ -134,15 +144,24 @@ sealed class Bubble : Form
     {
         base.OnPaint(e); var g = e.Graphics; g.SmoothingMode = SmoothingMode.AntiAlias;
         float scale = ClientSize.Width / 64f;
-        using var pen = new Pen(Color.FromArgb(233, 184, 92), 2*scale); g.DrawEllipse(pen, 2*scale, 2*scale, Width-5*scale, Height-5*scale);
+        var ring = new RectangleF(2*scale, 2*scale, Width-5*scale, Height-5*scale);
+        if (Tone == "blocked")
+        {
+            // Needs input wins: a red ring with a soft inner glow.
+            for (int i = 3; i >= 1; i--) { using var glow = new Pen(Color.FromArgb(40, Red), (2+i*2)*scale); g.DrawEllipse(glow, ring); }
+            using var red = new Pen(Red, 2*scale); g.DrawEllipse(red, ring);
+        }
+        else { using var pen = new Pen(Color.FromArgb(233, 184, 92), 2*scale); g.DrawEllipse(pen, ring); }
+        if (Working) { using var arc = new Pen(Amber, 3*scale) { StartCap = LineCap.Round, EndCap = LineCap.Round }; g.DrawArc(arc, ring, spin - 90, 100); }
         using var font = new Font("Segoe UI", Height * .40f, FontStyle.Bold, GraphicsUnit.Pixel);
         TextRenderer.DrawText(g, "H", font, ClientRectangle, Color.FromArgb(247, 201, 110), TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
         if (Count > 0)
         {
-            var rect = BadgeBounds; g.FillEllipse(Brushes.LightGreen, rect);
+            var rect = BadgeBounds; bool red = Tone == "blocked";
+            using var fill = new SolidBrush(red ? Red : Blue); g.FillEllipse(fill, rect);
             using var border = new Pen(BackColor, 2*scale); g.DrawEllipse(border, rect);
             using var badgeFont = new Font("Segoe UI", 10*scale, FontStyle.Bold, GraphicsUnit.Pixel);
-            TextRenderer.DrawText(g, Math.Min(Count, 9).ToString(), badgeFont, rect, Color.FromArgb(18,36,25), TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+            TextRenderer.DrawText(g, Math.Min(Count, 9).ToString(), badgeFont, rect, red ? Color.FromArgb(42,11,11) : Color.FromArgb(11,26,46), TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
         }
     }
     protected override void OnMouseDown(MouseEventArgs e) { base.OnMouseDown(e); if (e.Button != MouseButtons.Left) return; pressed = true; dragging = false; down = Cursor.Position; origin = Location; Capture = true; }
@@ -195,8 +214,14 @@ sealed class HUDContext : ApplicationContext
 {
     readonly Preferences prefs = Preferences.Load();
     readonly Bubble bubble = new(); readonly AgentPanel panel = new(); readonly WebView2 web = new();
-    readonly NotifyIcon tray = new(); readonly SemaphoreSlim transport = new(1);
+    // Roster checks, output reads and sends each get their own lane, so a slow or
+    // offline machine never delays opening an agent or a send.
+    readonly NotifyIcon tray = new(); readonly SemaphoreSlim transport = new(1), reads = new(1), sends = new(1);
     readonly System.Windows.Forms.Timer timer = new() { Interval = 3000 };
+    // One event bridge per machine. A machine whose bridge is live refreshes on
+    // its events; the others are polled. Everything is reconciled every 30 s.
+    readonly Dictionary<string, EventWatcher> watchers = new(); readonly HashSet<string> live = new(), eventMachines = new(), queuedMachines = new();
+    bool queuedAll, queuedForce; DateTime lastFull = DateTime.MinValue; string lastEmitted = "";
     readonly HashSet<string> promptIDs = new();
     readonly CancellationTokenSource lifetime = new();
     HerdrClient client; JsonObject snapshot = new();
@@ -226,7 +251,7 @@ sealed class HUDContext : ApplicationContext
         foregroundCallback = (_, _, _, _, _, _, _) => { if (!quitting && prefs.Visible) bubble.BeginInvoke(() => { Native.Raise(panel); if (toast is not null) Native.Raise(toast); Native.Raise(bubble); }); };
         foregroundHook = Native.SetWinEventHook(3,3,IntPtr.Zero,foregroundCallback,0,0,0);
         if (prefs.Visible) bubble.Show();
-        timer.Tick += async (_, _) => await Refresh(); timer.Start();
+        timer.Tick += async (_, _) => await Tick(); timer.Start();
         SystemEvents.DisplaySettingsChanged += DisplaysChanged;
         _ = Listen(); _ = InitializeWeb();
     }
@@ -256,19 +281,71 @@ sealed class HUDContext : ApplicationContext
         catch (Exception e) { File.WriteAllText(Path.Combine(Program.Support, "startup-error.txt"), e.ToString()); tray.ShowBalloonTip(8000, "Herdr HUD could not start", "Check that Microsoft Edge WebView2 Runtime is installed. " + e.Message, ToolTipIcon.Error); }
     }
     void Emit(string type, JsonObject data) { if (ready && !quitting) web.CoreWebView2.PostWebMessageAsJson(new JsonObject { ["type"] = type, ["data"] = data.DeepClone() }.ToJsonString()); }
-    async Task<T> Serialized<T>(Func<Task<T>> action) { await transport.WaitAsync(); try { return await action(); } finally { transport.Release(); } }
-    async Task Refresh()
+    static async Task<T> Serialized<T>(SemaphoreSlim lane, Func<Task<T>> action) { await lane.WaitAsync(); try { return await action(); } finally { lane.Release(); } }
+    // Manual refresh: every machine, ignoring the offline backoff.
+    Task Refresh() => Check(null, true);
+    async Task Tick()
     {
-        if (polling || !prefs.Visible || quitting) return; polling = true; var current = client;
-        try { var data = await Serialized(current.Snapshot); if (current == client) { snapshot = data; if (prefs.Visible) Emit("roster", data); Diagnostics(); } }
+        if (!prefs.Visible || quitting) return;
+        if (client.Machines.Count == 0 || DateTime.UtcNow - lastFull >= TimeSpan.FromSeconds(30)) { await Check(null, false); return; }
+        var polled = client.Machines.Select(m => m.Id).Where(id => !live.Contains(id)).ToHashSet();
+        if (polled.Count > 0) await Check(polled, false);
+    }
+    // Checks the named machines (null: rediscover and check all). Requests that
+    // arrive during a check are merged and run right after it.
+    async Task Check(IReadOnlySet<string>? only, bool force)
+    {
+        if (!prefs.Visible || quitting) return;
+        if (polling) { if (only is null) queuedAll = true; else queuedMachines.UnionWith(only); queuedForce |= force; return; }
+        polling = true; if (only is null) lastFull = DateTime.UtcNow; var current = client;
+        try { var data = await Serialized(transport, () => current.Snapshot(only, force)); if (current == client) { Publish(data); ReconcileWatchers(); } }
         finally { polling = false; }
+        if (queuedAll || queuedMachines.Count > 0)
+        {
+            IReadOnlySet<string>? next = queuedAll ? null : queuedMachines.ToHashSet(); bool nextForce = queuedForce;
+            queuedAll = false; queuedMachines.Clear(); queuedForce = false; await Check(next, nextForce);
+        }
+    }
+    // The page only hears about the roster when it changed, so the list is not
+    // rebuilt (and hover or focus does not flicker) every poll.
+    void Publish(JsonObject data)
+    {
+        snapshot = data; string text = data.ToJsonString();
+        if (prefs.Visible && ready && text != lastEmitted) { lastEmitted = text; Emit("roster", data); }
+        Diagnostics();
+    }
+    void ReconcileWatchers()
+    {
+        foreach (var (id, watcher) in watchers.ToArray()) if (!client.Machines.Contains(watcher.Machine)) { watcher.Dispose(); watchers.Remove(id); live.Remove(id); }
+        foreach (var machine in client.Machines)
+        {
+            if (watchers.ContainsKey(machine.Id)) continue;
+            Invocation? invocation; try { invocation = client.WatchInvocation(machine); } catch { continue; }
+            if (invocation is null) continue;
+            var watcher = new EventWatcher(machine, invocation, signal => { if (!quitting) bubble.BeginInvoke(() => WatcherSignal(machine.Id, signal)); });
+            watchers[machine.Id] = watcher; watcher.Start();
+        }
+    }
+    void StopWatchers() { foreach (var watcher in watchers.Values) watcher.Dispose(); watchers.Clear(); live.Clear(); }
+    void WatcherSignal(string id, EventWatcher.Signal signal)
+    {
+        if (!watchers.ContainsKey(id)) return;
+        switch (signal)
+        {
+            case EventWatcher.Signal.Down: live.Remove(id); break;
+            case EventWatcher.Signal.Ready: live.Add(id); _ = Check(new HashSet<string> { id }, true); break;
+            case EventWatcher.Signal.Changed:
+                // Events arrive in bursts (a new tab is three of them); gather them briefly.
+                if (eventMachines.Count == 0) _ = Task.Delay(150).ContinueWith(_ => bubble.BeginInvoke(async () => { var ids = eventMachines.ToHashSet(); eventMachines.Clear(); await Check(ids, true); }));
+                eventMachines.Add(id); break;
+        }
     }
     async Task Message(JsonObject data)
     {
         string op = data.Text("op"), requestID = data.Text("requestID"), id = data.Text("id");
         switch (op)
         {
-            case "ready": ready = true; Emit("preferences", new() { ["selectedAgent"] = prefs.SelectedAgent, ["rosterWidth"] = prefs.RosterWidth, ["mode"] = prefs.Mode }); Emit("visibility", new() { ["open"] = panel.Visible }); if (snapshot.Count > 0) Emit("roster", snapshot); await Refresh(); if (hotkeyWarning.Length > 0) Emit("notice", new() { ["message"] = hotkeyWarning }); break;
+            case "ready": ready = true; lastEmitted = ""; Emit("preferences", new() { ["selectedAgent"] = prefs.SelectedAgent, ["rosterWidth"] = prefs.RosterWidth, ["mode"] = prefs.Mode }); Emit("visibility", new() { ["open"] = panel.Visible }); if (snapshot.Count > 0) Publish(snapshot); await Refresh(); if (hotkeyWarning.Length > 0) Emit("notice", new() { ["message"] = hotkeyWarning }); break;
             case "close": ClosePanel(); break;
             case "hide": if (prefs.Visible) ToggleVisibility(); break;
             case "refresh": await Refresh(); break;
@@ -276,17 +353,18 @@ sealed class HUDContext : ApplicationContext
                 if (data["selectedAgent"] is JsonValue && data.Text("selectedAgent").Length <= 8192) prefs.SelectedAgent = data.Text("selectedAgent");
                 if (data["rosterWidth"] is JsonValue value && value.TryGetValue<double>(out var width) && width is >=56 and <=600) prefs.RosterWidth = width;
                 if (data.Text("mode") is "chat" or "terminal") prefs.Mode = data.Text("mode"); prefs.Save(); break;
-            case "badge": bubble.SetBadgeCount(data["count"]?.GetValue<int>() ?? 0); break;
+            case "badge": bubble.SetBadge(data["count"]?.GetValue<int>() ?? 0, data.Text("tone"), (data["working"]?.GetValue<int>() ?? 0) > 0); break;
             case "alertPreview":
                 if (panel.Visible || !prefs.Visible) break;
-                JsonObject output; try { output = await Serialized(() => client.Output(id)); } catch { output = new() { ["id"] = id, ["text"] = "", ["provider"] = "" }; }
-                output["title"] = data.Text("title"); Emit("alertPreview", output); break;
+                JsonObject output; try { output = await Serialized(reads, () => client.Output(id)); } catch { output = new() { ["id"] = id, ["text"] = "", ["provider"] = "" }; }
+                output["title"] = data.Text("title"); output["tone"] = data.Text("tone"); Emit("alertPreview", output); break;
             case "alert": if (!panel.Visible && prefs.Visible) ShowToast(data); break;
+            case "alertClear": HideToast(); break;
             case "output": case "prompt":
                 if (id.Length == 0 || requestID.Length == 0 || requestID.Length > 100 || !panel.Visible) break;
                 if (op == "prompt" && !promptIDs.Add(requestID)) break;
                 var current = client; JsonObject result;
-                try { result = await Serialized(() => current != client ? throw new InvalidOperationException("Herdr source changed. Refresh and select an agent.") : op == "output" ? current.Output(id) : current.Prompt(id, data.Text("message"))); }
+                try { result = await Serialized(op == "output" ? reads : sends, () => current != client ? throw new InvalidOperationException("Herdr source changed. Refresh and select an agent.") : op == "output" ? current.Output(id) : current.Prompt(id, data.Text("message"))); }
                 catch (Exception e) { result = new() { ["id"] = id, ["error"] = e.Message }; }
                 result["requestID"] = requestID; Emit(op, result); break;
         }
@@ -335,7 +413,7 @@ sealed class HUDContext : ApplicationContext
     void ToggleVisibility()
     {
         prefs.Visible = !prefs.Visible; prefs.Save();
-        if (prefs.Visible) { bubble.Show(); _ = Refresh(); } else { ClosePanel(); bubble.Hide(); HideToast(); Emit("resetBaseline", new()); }
+        if (prefs.Visible) { bubble.Show(); _ = Refresh(); } else { ClosePanel(); bubble.Hide(); HideToast(); lastEmitted = ""; Emit("resetBaseline", new()); }
         Diagnostics();
     }
     void RestorePosition()
@@ -361,21 +439,46 @@ sealed class HUDContext : ApplicationContext
         panel.Location = new Point(Math.Clamp(x, r.Left+8, Math.Max(r.Left+8, r.Right-panel.Width-8)), Math.Clamp(bubble.Top, r.Top+8, Math.Max(r.Top+8, r.Bottom-panel.Height-8)));
     }
     void DisplaysChanged(object? sender, EventArgs e) { if (!quitting) bubble.BeginInvoke(() => { RestorePosition(); PositionPanel(); PositionToast(); }); }
+    // One toast at a time. A newer alert updates it in place instead of replacing
+    // it; "update" only refreshes a toast that is already showing. Needs-input
+    // toasts stay until opened or dismissed; others fade after 6 s unless hovered.
+    Label? toastText; Panel? toastStripe; string toastAgent = ""; bool toastSticky;
     void ShowToast(JsonObject data)
     {
-        HideToast();
+        if (toast is null && data["update"]?.GetValueKind() == JsonValueKind.True) return;
         float scale = bubble.DeviceDpi / 96f;
         int Px(int value) => (int)Math.Round(value*scale);
-        toast = new SilentToast { Text = "Herdr HUD Agent Update", FormBorderStyle = FormBorderStyle.None, ShowInTaskbar = false, TopMost = true, BackColor = Color.FromArgb(24,27,34), Size = new Size(Px(330), Px(110)) };
-        var text = new Label { Text = data.Text("title")+"\n\n"+data.Text("preview"), ForeColor = Color.WhiteSmoke, Padding = new Padding(Px(14),Px(12),Px(38),Px(12)), Dock = DockStyle.Fill, Cursor = Cursors.Hand };
-        text.Click += (_, _) => { OpenPanel(); Emit("select", new() { ["id"] = data.Text("id") }); };
-        var close = new Button { Text = "×", Width = Px(28), Height = Px(28), Left = toast.ClientSize.Width-Px(30), Top = Px(2), Anchor = AnchorStyles.Top | AnchorStyles.Right, FlatStyle = FlatStyle.Flat, ForeColor = Color.WhiteSmoke }; close.Click += (_, _) => HideToast();
-        toast.Controls.Add(text); toast.Controls.Add(close); close.BringToFront();
-        toast.Shown += (_, _) => PositionToast();
-        toast.DpiChanged += (_, _) => PositionToast();
-        PositionToast(); toast.Show(); Native.Raise(toast); Native.Raise(bubble);
-        toastTimer = new() { Interval = 8000 };
-        toastTimer.Tick += (_, _) => { if (toast is not null && !toast.Bounds.Contains(Cursor.Position)) HideToast(); }; toastTimer.Start();
+        if (toast is null)
+        {
+            toast = new SilentToast { Text = "Herdr HUD Agent Update", FormBorderStyle = FormBorderStyle.None, ShowInTaskbar = false, TopMost = true, BackColor = Color.FromArgb(8,10,20), Size = new Size(Px(330), Px(110)) };
+            toastStripe = new Panel { Dock = DockStyle.Left, Width = Px(4) };
+            toastText = new Label { ForeColor = Color.FromArgb(196,192,182), Padding = new Padding(Px(12),Px(12),Px(38),Px(12)), Dock = DockStyle.Fill, Cursor = Cursors.Hand, UseMnemonic = false };
+            toastText.Paint += PaintToastTitle;
+            toastText.Click += (_, _) => { string id = toastAgent; OpenPanel(); Emit("select", new() { ["id"] = id }); };
+            var close = new Button { Text = "×", Width = Px(28), Height = Px(28), Left = toast.ClientSize.Width-Px(30), Top = Px(2), Anchor = AnchorStyles.Top | AnchorStyles.Right, FlatStyle = FlatStyle.Flat, ForeColor = Color.WhiteSmoke }; close.FlatAppearance.BorderSize = 0; close.Click += (_, _) => HideToast();
+            toast.Controls.Add(toastText); toast.Controls.Add(toastStripe); toast.Controls.Add(close); close.BringToFront();
+            toast.Shown += (_, _) => PositionToast();
+            toast.DpiChanged += (_, _) => PositionToast();
+            PositionToast(); toast.Show(); Native.Raise(toast); Native.Raise(bubble);
+        }
+        toastAgent = data.Text("id"); toastSticky = data.Text("tone") == "blocked";
+        toastStripe!.BackColor = toastSticky ? Bubble.Red : Bubble.Blue;
+        // The title line is painted in the state color; the label holds the preview below it.
+        toastText!.Tag = data.Text("title"); toastText.Text = "\n\n" + data.Text("preview"); toastText.Invalidate();
+        toastTimer?.Dispose(); toastTimer = null;
+        if (!toastSticky)
+        {
+            toastTimer = new() { Interval = 6000 };
+            toastTimer.Tick += (_, _) => { if (toast is not null && !toast.Bounds.Contains(Cursor.Position)) HideToast(); }; toastTimer.Start();
+        }
+    }
+    void PaintToastTitle(object? sender, PaintEventArgs e)
+    {
+        if (sender is not Label label) return;
+        using var font = new Font(label.Font.FontFamily, label.Font.Size * 1.08f, FontStyle.Bold);
+        var color = toastSticky ? Color.FromArgb(255,154,154) : Color.FromArgb(169,203,255);
+        e.Graphics.FillRectangle(new SolidBrush(label.BackColor), label.Padding.Left, label.Padding.Top, label.Width - label.Padding.Horizontal, font.Height + 2);
+        TextRenderer.DrawText(e.Graphics, label.Tag as string ?? "", font, new Rectangle(label.Padding.Left, label.Padding.Top, label.Width - label.Padding.Horizontal, font.Height + 2), color, TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix | TextFormatFlags.Left);
     }
     void PositionToast()
     {
@@ -387,7 +490,7 @@ sealed class HUDContext : ApplicationContext
         if (y < area.Top) y = bubble.Bottom+gap;
         toast.Location = new Point(Math.Clamp(x,area.Left,Math.Max(area.Left,area.Right-toast.Width)), Math.Clamp(y,area.Top,Math.Max(area.Top,area.Bottom-toast.Height)));
     }
-    void HideToast() { toastTimer?.Dispose(); toastTimer = null; toast?.Dispose(); toast = null; }
+    void HideToast() { toastTimer?.Dispose(); toastTimer = null; toast?.Dispose(); toast = null; toastText = null; toastStripe = null; }
     void Connection()
     {
         using var form = new Form { Text = "Herdr connection", Size = new Size(500,280), StartPosition = FormStartPosition.CenterScreen, FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false };
@@ -402,14 +505,14 @@ sealed class HUDContext : ApplicationContext
             try { if (target.Text.Trim().Length > 0) HerdrClient.ValidateTarget(target.Text.Trim()); if (string.IsNullOrWhiteSpace(session.Text) || session.Text.Any(char.IsControl)) throw new InvalidOperationException("Enter a valid session name."); }
             catch (Exception e) { MessageBox.Show(form, e.Message); return; }
             prefs.SourceTarget = target.Text.Trim(); prefs.SourceSession = session.Text.Trim(); prefs.SelectedAgent = ""; prefs.Save();
-            client = new HerdrClient(prefs.SourceTarget, prefs.SourceSession); snapshot = new(); Emit("resetBaseline", new()); form.DialogResult = DialogResult.OK;
+            StopWatchers(); client = new HerdrClient(prefs.SourceTarget, prefs.SourceSession); snapshot = new(); lastEmitted = ""; Emit("resetBaseline", new()); form.DialogResult = DialogResult.OK;
         };
         form.Controls.AddRange([info,label,target,sessionLabel,session,save]); form.AcceptButton = save;
         if (form.ShowDialog() == DialogResult.OK) { OpenPanel(); _ = Refresh(); }
     }
     JsonObject Diagnostics()
     {
-        var data = new JsonObject { ["ready"] = ready, ["visible"] = bubble.Visible, ["panelOpen"] = panel.Visible, ["pid"] = Environment.ProcessId, ["sessionId"] = Process.GetCurrentProcess().SessionId, ["agents"] = snapshot["agents"]?.AsArray().Count ?? 0, ["resources"] = Path.Combine(AppContext.BaseDirectory, "Resources"), ["shortcutWarning"] = hotkeyWarning, ["badgeCount"] = bubble.Count, ["badgeBounds"] = JsonSerializer.SerializeToNode(bubble.BadgeBounds), ["toastBounds"] = toast is not null ? JsonSerializer.SerializeToNode(toast.Bounds) : null, ["bubbleBounds"] = JsonSerializer.SerializeToNode(bubble.Bounds), ["panelBounds"] = JsonSerializer.SerializeToNode(panel.Bounds) };
+        var data = new JsonObject { ["ready"] = ready, ["visible"] = bubble.Visible, ["panelOpen"] = panel.Visible, ["pid"] = Environment.ProcessId, ["sessionId"] = Process.GetCurrentProcess().SessionId, ["agents"] = snapshot["agents"]?.AsArray().Count ?? 0, ["eventStreams"] = new JsonArray(live.Order().Select(id => (JsonNode?)id).ToArray()), ["resources"] = Path.Combine(AppContext.BaseDirectory, "Resources"), ["shortcutWarning"] = hotkeyWarning, ["badgeCount"] = bubble.Count, ["badgeBounds"] = JsonSerializer.SerializeToNode(bubble.BadgeBounds), ["toastBounds"] = toast is not null ? JsonSerializer.SerializeToNode(toast.Bounds) : null, ["bubbleBounds"] = JsonSerializer.SerializeToNode(bubble.Bounds), ["panelBounds"] = JsonSerializer.SerializeToNode(panel.Bounds) };
         File.WriteAllText(Path.Combine(Program.Support, "diagnostics.json"), data.ToJsonString()); return data;
     }
     async Task Listen()
@@ -497,7 +600,7 @@ sealed class HUDContext : ApplicationContext
     }
     void Quit()
     {
-        quitting = true; lifetime.Cancel(); timer.Stop(); HideToast();
+        quitting = true; lifetime.Cancel(); timer.Stop(); HideToast(); StopWatchers();
         if (foregroundHook != IntPtr.Zero) Native.UnhookWinEvent(foregroundHook);
         SystemEvents.DisplaySettingsChanged -= DisplaysChanged;
         Native.UnregisterHotKey(bubble.Handle, 1); Native.UnregisterHotKey(bubble.Handle, 2);

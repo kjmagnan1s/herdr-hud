@@ -189,5 +189,17 @@
     return (prompt||reply||'').replace(/\s+/g,' ').trim().slice(0,140);
   }
 
-  const api={sorted,alerts,parse,identity,pane,labels,preview,chatProviders,extractDialog};if(typeof module!=='undefined')module.exports=api;else root.HUDModel=api;
+  // One toast for every alert the user has not looked at yet: needs input
+  // first, then finished. items are {agent, tone:'blocked'|'done'}.
+  function summary(items,nameOf){
+    const blocked=items.filter(i=>i.tone==='blocked'),done=items.filter(i=>i.tone!=='blocked'),ordered=[...blocked,...done];
+    if(!ordered.length)return null;
+    const names=ordered.map(i=>nameOf(i.agent)),plural=(n,one,many)=>`${n} ${n===1?one:many}`;
+    const title=ordered.length===1?names[0]+(blocked.length?' needs input':' finished')
+      :!done.length?`${blocked.length} agents need input`:!blocked.length?`${done.length} agents finished`
+      :`${plural(blocked.length,'needs','need')} input, ${done.length} finished`;
+    return {id:ordered[0].agent.id,tone:blocked.length?'blocked':'done',title,preview:names.join(', ').slice(0,200),count:ordered.length};
+  }
+
+  const api={sorted,alerts,summary,parse,identity,pane,labels,preview,chatProviders,extractDialog};if(typeof module!=='undefined')module.exports=api;else root.HUDModel=api;
 })(globalThis);

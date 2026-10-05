@@ -14,7 +14,7 @@ alerts, and visibility controls.
   the app or touching any agent.
 
 Run `swift test` for Mac changes, `node --test Tests/*.test.cjs` for interface
-changes, and `dotnet run --project Windows.Tests/HerdrHUD.Tests.csproj -c Release`
+changes, `python3 Tests/test_watch_bridge.py` for the event bridge, and `dotnet run --project Windows.Tests/HerdrHUD.Tests.csproj -c Release`
 on Windows for transport changes. Build native hosts on their target operating
 systems using the scripts in `scripts/`.
 

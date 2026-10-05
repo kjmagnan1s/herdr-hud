@@ -48,7 +48,10 @@ final class TransportTests: XCTestCase {
     }
     func testReplacementRefusedForReadAndPrompt() throws {
         var current=row();var sent=false;let client=clientWith({current},sends:{_ in sent=true;return "{}"});let id=(client.snapshot()["agents"] as! [Row])[0]["id"] as! String
-        current=row(session:"replacement");XCTAssertThrowsError(try client.output(id));XCTAssertThrowsError(try client.prompt(id,"hello"));XCTAssertFalse(sent)
+        // A send re-checks the pane and refuses at once. A read trusts the last
+        // snapshot, so it is refused as soon as a snapshot shows the change.
+        current=row(session:"replacement");XCTAssertThrowsError(try client.prompt(id,"hello"));XCTAssertFalse(sent)
+        _=client.snapshot();XCTAssertThrowsError(try client.output(id))
     }
     func testUnknownOutcomeNeverRetries() throws {
         var sends=0;let client=clientWith({self.row()},sends:{_ in sends+=1;throw HUDError("Delivery uncertain")});let id=(client.snapshot()["agents"] as! [Row])[0]["id"] as! String
@@ -98,7 +101,9 @@ extension TransportTests {
         let remote=agents.first{$0["machine_id"] as? String == "remote"}!,local=agents.first{$0["machine_id"] as? String == "local"}!
         XCTAssertEqual(local["online"] as? Bool,true);XCTAssertEqual(remote["online"] as? Bool,false)
         XCTAssertThrowsError(try client.prompt(remote["id"] as! String,"hello"));XCTAssertFalse(sent)
-        offline=false;XCTAssertTrue((client.snapshot()["agents"] as! [Row]).allSatisfy{$0["online"] as? Bool == true})
+        // Back online: the backoff holds the cached offline cards until forced.
+        offline=false;XCTAssertFalse((client.snapshot()["agents"] as! [Row]).allSatisfy{$0["online"] as? Bool == true})
+        XCTAssertTrue((client.snapshot(force:true)["agents"] as! [Row]).allSatisfy{$0["online"] as? Bool == true})
     }
 }
 
@@ -150,5 +155,87 @@ extension TransportTests {
         let input=Data(encode(["agent":row(),"text":"private 🐑"]).utf8)
         let result=try LocalPrompt.send(path:path,input:input,timeout:2)
         XCTAssertTrue(result.contains("agent_prompted"))
+    }
+}
+
+extension TransportTests {
+    func remoteClient(_ remoteCall: @escaping (Invocation) throws -> Void) -> HerdrClient {
+        HerdrClient(binary:"/test/herdr",execute:{call in
+            if call.arguments.contains("machine"){return encode([["id":"remote","label":"Remote","target":"host","session":"default","enabled":true]])}
+            let remote=call.executable=="/usr/bin/ssh"
+            if remote {try remoteCall(call)}
+            let group=remote ? ["agent","workspace","tab"].first{call.arguments.last!.contains(shellQuote($0))}! : call.arguments[2]
+            return encode(["result":[["agent":"agents","workspace":"workspaces","tab":"tabs"][group]!:group=="agent" ? [self.row()] : []]])
+        })
+    }
+    func testOfflineMachineBacksOffAndDoesNotDelayOthers() throws {
+        let lock=NSLock();var attempts=0
+        let client=remoteClient{_ in lock.lock();attempts+=1;lock.unlock();Thread.sleep(forTimeInterval:0.3);throw HUDError("offline")}
+        let start=Date();_=client.snapshot()
+        XCTAssertEqual(attempts,1) // the first list call fails; the others are skipped
+        let first=Date().timeIntervalSince(start)
+        _=client.snapshot();_=client.snapshot()
+        XCTAssertEqual(attempts,1,"An offline machine waits out its backoff instead of being retried every poll")
+        XCTAssertLessThan(Date().timeIntervalSince(start)-first,0.25)
+        let state=(client.snapshot()["machines"] as! [Row]).first{$0["id"] as? String=="remote"}!
+        XCTAssertEqual(state["online"] as? Bool,false);XCTAssertEqual(state["retryIn"] as? Int,15)
+        _=client.snapshot(force:true);XCTAssertEqual(attempts,2)
+        let again=(client.snapshot(force:true)["machines"] as! [Row]).first{$0["id"] as? String=="remote"}!
+        XCTAssertEqual(again["retryIn"] as? Int,60)
+    }
+    func testMachinesAreCheckedConcurrently() throws {
+        // Every list call takes 0.3 s: 1.8 s for two machines in series, about
+        // 0.9 s when the machines are checked side by side.
+        let client=remoteClient{_ in}
+        let slow=HerdrClient(binary:"/test/herdr",execute:{call in
+            if !call.arguments.contains("machine") {Thread.sleep(forTimeInterval:0.3)}
+            return try client.execute(call)
+        })
+        let start=Date();let agents=slow.snapshot()["agents"] as! [Row]
+        XCTAssertEqual(agents.count,2);XCTAssertLessThan(Date().timeIntervalSince(start),1.5)
+    }
+    func testOnlyNamedMachinesAreRefreshed() throws {
+        let lock=NSLock();var remoteCalls=0
+        let client=remoteClient{_ in lock.lock();remoteCalls+=1;lock.unlock()}
+        _=client.snapshot();XCTAssertEqual(remoteCalls,3)
+        let agents=client.snapshot(only:["local"],force:true)["agents"] as! [Row]
+        XCTAssertEqual(remoteCalls,3,"An event from one machine re-reads only that machine")
+        XCTAssertEqual(agents.count,2,"Other machines keep their last result")
+    }
+    func testReadsUseTheSnapshotBindingWithoutListingAgain() throws {
+        var lists=0
+        let client=HerdrClient(binary:"/test/herdr",execute:{call in
+            if call.arguments.contains("machine"){return "[]"}
+            if call.arguments.contains("read"){return "• Reply"}
+            if call.arguments[2]=="agent"{lists+=1}
+            return encode(["result":[["agent":"agents","workspace":"workspaces","tab":"tabs"][call.arguments[2]]!:call.arguments[2]=="agent" ? [self.row()] : []]])
+        })
+        let id=(client.snapshot()["agents"] as! [Row])[0]["id"] as! String;let before=lists
+        XCTAssertEqual(try client.output(id)["text"] as? String,"• Reply");XCTAssertEqual(lists,before)
+    }
+    func testWatchBridgeIsLiteralReadOnlyAndKeepsAlive() throws {
+        let client=HerdrClient(binary:"/test/herdr")
+        let remote=try XCTUnwrap(client.watchInvocation(Machine(id:"r",label:"R",target:"host",session:"dev's")))
+        XCTAssertEqual(remote.executable,"/usr/bin/ssh");XCTAssertFalse(remote.mutation)
+        for option in ["BatchMode=yes","StrictHostKeyChecking=yes","ServerAliveInterval=15","ServerAliveCountMax=2"] {XCTAssertTrue(remote.arguments.contains(option))}
+        XCTAssertFalse(remote.arguments.joined().contains("dev's"),"The session travels on stdin, never in the command")
+        XCTAssertEqual(String(decoding:remote.input!,as:UTF8.self),"{\"session\":\"dev's\"}\n")
+        XCTAssertThrowsError(try client.watchInvocation(Machine(id:"r",label:"R",target:"-oProxyCommand=x",session:"d")))
+        XCTAssertNil(try client.watchInvocation(machine,python:nil),"No real Python: poll instead of opening the install dialog")
+        XCTAssertEqual(try client.watchInvocation(machine,python:"/opt/homebrew/bin/python3")?.arguments.first,"-c")
+    }
+    func testEventWatcherReportsLinesAndRestartsAfterExit() throws {
+        // A stand-in bridge: prints ready and one change, then exits. The
+        // watcher must report both and start it again.
+        let script="read request; echo '{\"type\":\"ready\",\"agents\":1}'; echo '{\"type\":\"changed\"}'; exit 0"
+        let lock=NSLock();var signals:[EventWatcher.Signal]=[]
+        let done=expectation(description:"restarted");done.assertForOverFulfill=false
+        let watcher=EventWatcher(machine:machine,invocation:Invocation(executable:"/bin/sh",arguments:["-c",script],mutation:false,input:Data("{}\n".utf8))){signal in
+            lock.lock();signals.append(signal);let readies=signals.filter{$0 == .ready}.count;lock.unlock()
+            if readies>=2 {done.fulfill()}
+        }
+        watcher.start();wait(for:[done],timeout:5);watcher.stop()
+        lock.lock();defer{lock.unlock()}
+        XCTAssertEqual(Array(signals.prefix(3)),[.ready,.changed,.down])
     }
 }

@@ -9,7 +9,9 @@ namespace HerdrHUD;
 
 // Spawn suspended, assign a kill-on-close job, then resume. Children cannot escape
 // cleanup by exiting their parent before Process.Kill(entireProcessTree) runs.
-sealed class OwnedProcess : IDisposable
+public interface IChildProcess : IDisposable { Stream Input {get;} Stream Output {get;} Stream Error {get;} void Stop(); }
+
+public sealed class OwnedProcess : IChildProcess
 {
     [StructLayout(LayoutKind.Sequential)] struct Startup { public int Size; public nint Reserved,Desktop,Title; public int X,Y,XSize,YSize,XCount,YCount,Fill,Flags; public short Show,Reserved2; public nint ReservedPtr,Input,Output,Error; }
     [StructLayout(LayoutKind.Sequential)] struct StartupEx { public Startup Info; public nint Attributes; }
@@ -36,6 +38,7 @@ sealed class OwnedProcess : IDisposable
     public FileStream Input {get;}
     public FileStream Output {get;}
     public FileStream Error {get;}
+    Stream IChildProcess.Input => Input; Stream IChildProcess.Output => Output; Stream IChildProcess.Error => Error;
     static void Require(bool ok) {if(!ok) throw new InvalidOperationException("Cannot create isolated command ("+Marshal.GetLastWin32Error()+").");}
     public static string Quote(string value) {
         var s=new StringBuilder("\"");int slashes=0;

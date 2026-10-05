@@ -14,15 +14,24 @@ public static class Json
     public static JsonObject Copy(this JsonObject row) => (JsonObject)row.DeepClone();
 }
 
-// Calls are serialized by the host. No terminal is prompted without fresh identity,
-// configuration, and readiness checks. A submitted prompt is never retried.
+// The host runs roster checks, reads and sends on separate lanes. No terminal is
+// prompted without fresh identity, configuration, and readiness checks. A
+// submitted prompt is never retried.
 public sealed class HerdrClient
 {
     readonly Func<Invocation, Task<string>> execute;
     readonly string binary, sourceTarget, sourceSession;
-    readonly Dictionary<string, List<JsonObject>> cache = new();
+    // Each machine's last result. Machines are checked concurrently, and one that
+    // fails is retried on a widening interval, so an asleep remote never delays
+    // the others.
+    sealed record MachineResult(List<JsonObject> Agents, JsonObject State, Dictionary<string, (Machine Machine, JsonObject Agent)> Bindings);
+    readonly Dictionary<string, MachineResult> results = new();
+    readonly Dictionary<string, (int Count, DateTime RetryAt)> failures = new();
+    static readonly int[] Backoff = [15, 30, 60];
     Dictionary<string, (Machine Machine, JsonObject Agent)> bindings = new();
     List<Machine> machines = [];
+    string discoveryError = "";
+    public IReadOnlyList<Machine> Machines => machines;
     const string Script = "unset HERDR_ENV HERDR_SOCKET_PATH HERDR_CONFIG_PATH HERDR_SESSION HERDR_SESSION_NAME HERDR_WORKSPACE_ID HERDR_TAB_ID HERDR_PANE_ID HERDR_TERMINAL_ID; if [ -x \"$HOME/.local/bin/herdr\" ]; then exec \"$HOME/.local/bin/herdr\" \"$@\"; elif [ -x /opt/homebrew/bin/herdr ]; then exec /opt/homebrew/bin/herdr \"$@\"; else exec herdr \"$@\"; fi";
     public HerdrClient(string sourceTarget = "", string sourceSession = "default", string? binary = null, Func<Invocation, Task<string>>? execute = null)
     {
@@ -40,14 +49,31 @@ public sealed class HerdrClient
         if (string.IsNullOrWhiteSpace(target) || target.StartsWith('-') || target.Any(c => char.IsWhiteSpace(c) || char.IsControl(c))) throw new InvalidOperationException("Invalid saved SSH target.");
     }
     static string Command(IEnumerable<string> args) => string.Join(" ", args.Select(Quote));
-    static string[] SshArgs(string target, string command) => ["-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "-o", "StrictHostKeyChecking=yes", target, command];
+    // Keepalives let a long-lived event link notice a dead connection in about 30 seconds.
+    static string[] SshArgs(string target, string command, bool keepAlive = false) => keepAlive
+        ? ["-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "-o", "StrictHostKeyChecking=yes", "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=2", target, command]
+        : ["-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "-o", "StrictHostKeyChecking=yes", target, command];
+    static string SshPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "System32", "OpenSSH", "ssh.exe");
+    /// The read-only event bridge for one machine, or null when it cannot run:
+    /// a Herdr on this PC speaks a named pipe and is polled instead.
+    public Invocation? WatchInvocation(Machine machine)
+    {
+        if (sourceTarget.Length == 0 && machine.Target is null) return null;
+        var script = Command(["python3", "-c", File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Resources", "watch.py"))]);
+        var input = Encoding.UTF8.GetBytes(new JsonObject { ["session"] = machine.Session }.ToJsonString() + "\n");
+        if (machine.Target is not null) ValidateTarget(machine.Target);
+        if (sourceTarget.Length == 0) return new Invocation(SshPath, SshArgs(machine.Target!, script, true), false, input);
+        ValidateTarget(sourceTarget);
+        var remote = machine.Target is null ? script : Command(["ssh", ..SshArgs(machine.Target, script, true)]);
+        return new Invocation(SshPath, SshArgs(sourceTarget, remote, true), false, input);
+    }
     public Invocation Invoke(Machine machine, string[] args, bool mutation = false, byte[]? input = null)
     {
         string[] scoped = ["--session", machine.Session, ..args];
         if (scoped.Any(s => s.Contains('\0'))) throw new InvalidOperationException("Invalid command argument.");
         var posix = mutation ? Command(["python3","-c",File.ReadAllText(Path.Combine(AppContext.BaseDirectory,"Resources","prompt.py"))]) : Command(["sh", "-c", Script, "herdr-hud", ..scoped]);
         if (machine.Target is not null) ValidateTarget(machine.Target);
-        var ssh = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "System32", "OpenSSH", "ssh.exe");
+        var ssh = SshPath;
         if (sourceTarget.Length > 0)
         {
             ValidateTarget(sourceTarget);
@@ -79,53 +105,84 @@ public sealed class HerdrClient
         return found;
     }
     public string Key(Machine machine, JsonObject row) => new JsonArray(sourceTarget, sourceSession, machine.Id, machine.Target ?? "", machine.Session, row.Text("pane_id"), row.Text("terminal_id"), row["agent_session"]?.DeepClone()).ToJsonString();
-    public async Task<JsonObject> Snapshot()
+    async Task<MachineResult> Fetch(Machine machine)
     {
-        string error = "";
-        try { machines = await Discover(); } catch (Exception e) { error = e.Message; if (machines.Count == 0) machines = [Root]; }
+        var state = new JsonObject { ["id"] = machine.Id, ["label"] = machine.Label, ["session"] = machine.Session };
+        try
+        {
+            var agents = await Rows(machine, "agent"); var spaces = await Rows(machine, "workspace"); var tabs = await Rows(machine, "tab");
+            var enriched = new List<JsonObject>(); var bound = new Dictionary<string, (Machine, JsonObject)>();
+            foreach (var agent in agents)
+            {
+                string key = Key(machine, agent); var row = agent.Copy();
+                row["id"] = key; row["machine_label"] = machine.Label; row["machine_id"] = machine.Id; row["online"] = true;
+                row["workspace_label"] = spaces.FirstOrDefault(s => s.Text("workspace_id") == agent.Text("workspace_id"))?.Text("label") ?? agent.Text("workspace_id");
+                row["tab_label"] = tabs.FirstOrDefault(s => s.Text("tab_id") == agent.Text("tab_id"))?.Text("label") ?? agent.Text("tab_id");
+                enriched.Add(row); bound[key] = (machine, agent);
+            }
+            state["online"] = true; state["count"] = enriched.Count;
+            return new(enriched, state, bound);
+        }
+        catch (Exception e)
+        {
+            var cached = (results.GetValueOrDefault(machine.Id)?.Agents ?? []).Select(c => { var row = c.Copy(); row["online"] = false; return row; }).ToList();
+            state["online"] = false; state["error"] = e.Message;
+            return new(cached, state, new());
+        }
+    }
+    /// only limits the check to those machine ids (an event named them); null
+    /// re-reads Herdr's saved machines and checks every machine that is due.
+    /// force ignores the failure backoff (manual refresh, or an event proved the
+    /// machine is reachable again).
+    public async Task<JsonObject> Snapshot(IReadOnlySet<string>? only = null, bool force = false)
+    {
+        if (only is null || machines.Count == 0)
+        {
+            try { machines = await Discover(); discoveryError = ""; } catch (Exception e) { discoveryError = e.Message; if (machines.Count == 0) machines = [Root]; }
+        }
+        var now = DateTime.UtcNow;
+        var due = machines.Where(m => only is not null && !only.Contains(m.Id) ? !results.ContainsKey(m.Id)
+            : force || !results.ContainsKey(m.Id) || !failures.TryGetValue(m.Id, out var f) || f.RetryAt <= now).ToList();
+        var fresh = await Task.WhenAll(due.Select(Fetch));
+        for (int i = 0; i < due.Count; i++)
+        {
+            var (machine, result) = (due[i], fresh[i]);
+            if (result.State.Flag("online")) failures.Remove(machine.Id);
+            else
+            {
+                int count = failures.TryGetValue(machine.Id, out var f) ? f.Count + 1 : 1, wait = Backoff[Math.Min(count, Backoff.Length) - 1];
+                failures[machine.Id] = (count, DateTime.UtcNow.AddSeconds(wait)); result.State["retryIn"] = wait;
+            }
+            results[machine.Id] = result;
+        }
+        foreach (var id in results.Keys.Where(id => !machines.Any(m => m.Id == id)).ToArray()) { results.Remove(id); failures.Remove(id); }
         var all = new JsonArray(); var states = new JsonArray(); var next = new Dictionary<string, (Machine, JsonObject)>();
         foreach (var machine in machines)
         {
-            var state = new JsonObject { ["id"] = machine.Id, ["label"] = machine.Label, ["session"] = machine.Session };
-            try
-            {
-                var agents = await Rows(machine, "agent"); var spaces = await Rows(machine, "workspace"); var tabs = await Rows(machine, "tab");
-                var enriched = new List<JsonObject>();
-                foreach (var agent in agents)
-                {
-                    string key = Key(machine, agent); var row = agent.Copy();
-                    row["id"] = key; row["machine_label"] = machine.Label; row["machine_id"] = machine.Id; row["online"] = true;
-                    row["workspace_label"] = spaces.FirstOrDefault(s => s.Text("workspace_id") == agent.Text("workspace_id"))?.Text("label") ?? agent.Text("workspace_id");
-                    row["tab_label"] = tabs.FirstOrDefault(s => s.Text("tab_id") == agent.Text("tab_id"))?.Text("label") ?? agent.Text("tab_id");
-                    enriched.Add(row); next[key] = (machine, agent);
-                }
-                cache[machine.Id] = enriched; foreach (var row in enriched) all.Add(row.Copy());
-                state["online"] = true; state["count"] = enriched.Count;
-            }
-            catch (Exception e)
-            {
-                foreach (var cached in cache.GetValueOrDefault(machine.Id) ?? []) { var row = cached.Copy(); row["online"] = false; all.Add(row); }
-                state["online"] = false; state["error"] = e.Message;
-            }
-            states.Add(state);
+            if (!results.TryGetValue(machine.Id, out var result)) continue;
+            foreach (var row in result.Agents) all.Add(row.Copy());
+            states.Add(result.State.Copy());
+            foreach (var pair in result.Bindings) next[pair.Key] = pair.Value;
         }
         bindings = next;
-        foreach (var id in cache.Keys.Where(id => !machines.Any(m => m.Id == id)).ToArray()) cache.Remove(id);
-        return new JsonObject { ["agents"] = all, ["machines"] = states, ["discoveryError"] = error };
+        return new JsonObject { ["agents"] = all, ["machines"] = states, ["discoveryError"] = discoveryError };
     }
-    // Prompts re-read the saved machines before sending. Reads skip that extra
-    // Herdr call; the pane identity check below still refuses replaced agents.
-    async Task<(Machine Machine, JsonObject Agent)> Resolve(string id, bool checkMachines = true)
+    // Prompts re-read the saved machines and the agent's pane before sending, so
+    // a replaced agent or changed machine is refused.
+    async Task<(Machine Machine, JsonObject Agent)> Resolve(string id)
     {
         if (!bindings.TryGetValue(id, out var binding)) throw new InvalidOperationException("Agent is offline or changed. Refresh and select it again.");
-        if (checkMachines && !(await Discover()).Contains(binding.Machine)) throw new InvalidOperationException("This machine's Herdr configuration changed. Refresh before sending.");
+        if (!(await Discover()).Contains(binding.Machine)) throw new InvalidOperationException("This machine's Herdr configuration changed. Refresh before sending.");
         var current = (await Rows(binding.Machine, "agent")).FirstOrDefault(r => r.Text("pane_id") == binding.Agent.Text("pane_id"));
         if (current is null || Key(binding.Machine, current) != id || current.Text("workspace_id") != binding.Agent.Text("workspace_id") || current.Text("agent") != binding.Agent.Text("agent")) throw new InvalidOperationException("The selected agent was replaced. Select its new session.");
         return (binding.Machine, current);
     }
+    // Reads trust the last snapshot's binding instead of listing agents again;
+    // events keep that snapshot current. Prompts still re-check identity.
     public async Task<JsonObject> Output(string id)
     {
-        var (machine, agent) = await Resolve(id, checkMachines: false);
+        if (!bindings.TryGetValue(id, out var binding)) throw new InvalidOperationException("Agent is offline or changed. Refresh and select it again.");
+        var (machine, agent) = binding;
         return new JsonObject { ["id"] = id, ["provider"] = agent.Text("agent"), ["text"] = await Call(machine, ["agent", "read", agent.Text("pane_id"), "--source", "recent-unwrapped", "--lines", "180"]) };
     }
     public async Task<JsonObject> Prompt(string id, string message)

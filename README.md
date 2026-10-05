@@ -78,8 +78,11 @@ run the packaged app. Xcode command-line tools are needed to build from source.
 - Drag the roster divider to resize it. Visibility, position, view, and divider
   width are remembered. Prompt drafts are kept per agent while the app runs.
 - Agents needing attention sort first, then working agents, then read idle agents.
-- Silent alerts appear above H (below it near the top edge) after an agent finishes or needs input. Hover to
-  retain one, click to open its agent, or dismiss it. The attention badge remains.
+- H shows the most urgent state: a red ring and badge count agents that need input,
+  otherwise a blue badge counts unread results. An amber arc turns while any agent works.
+- Silent alerts appear above H (below it near the top edge) after an agent finishes or needs input.
+  Needs-input alerts are red and stay until opened or dismissed; finished alerts are blue and fade
+  after 6 seconds unless hovered. Several at once become one summary, which updates in place.
 
 ## Run on Windows
 
@@ -136,6 +139,16 @@ helper. It runs over SSH without installing files and forwards text from stdin
 to the host’s Herdr socket. Local Mac/Windows prompts use native socket/pipe
 clients and do not require Python. Complete authentication and
 host-key setup in Herdr first; the HUD does not open hidden SSH questions.
+
+The roster updates from Herdr's event stream instead of polling. For each machine
+the HUD keeps one read-only bridge (`watch.py`, standard library only) running
+locally or over one long-lived SSH connection; it subscribes to Herdr's status
+and lifecycle events and never sends input. A machine whose bridge is down is
+polled every 3 seconds, an unreachable machine is retried after 15, 30, then 60
+seconds without delaying the others, and everything is reconciled every 30
+seconds. The local Mac bridge uses an installed Python 3 (Homebrew or the Xcode
+command-line tools) and is skipped otherwise; a Herdr running natively on
+Windows is polled.
 
 Agent identities include machine, target, session, pane, terminal, and available
 conversation identity. Each read/send rechecks the identity; sends also recheck
@@ -230,7 +243,11 @@ swift test
 node --test Tests/*.test.cjs
 node --check Sources/HerdrHUD/Resources/app.js
 python3 Tests/test_prompt_helper.py
+python3 Tests/test_watch_bridge.py
 ```
+
+`HERDR_BIN=/path/to/herdr python3 Tests/test_watch_bridge.py` also runs the event
+bridge against a real Herdr server that the test starts in a temporary home.
 
 Node is needed only for JavaScript development tests; Python 3 is used by socket
 fixtures and remote-helper tests during development. Swift tests exercise

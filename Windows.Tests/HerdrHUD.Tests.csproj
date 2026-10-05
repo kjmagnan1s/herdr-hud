@@ -5,5 +5,5 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
-  <ItemGroup><Compile Include="..\Windows\Herdr.cs" Link="Herdr.cs" /><Compile Include="..\Windows\Transport.cs" Link="Transport.cs" /><Content Include="..\Sources\HerdrHUD\Resources\prompt.py" Link="Resources\prompt.py" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
+  <ItemGroup><Compile Include="..\Windows\Herdr.cs" Link="Herdr.cs" /><Compile Include="..\Windows\Transport.cs" Link="Transport.cs" /><Compile Include="..\Windows\Watch.cs" Link="Watch.cs" /><Content Include="..\Sources\HerdrHUD\Resources\prompt.py" Link="Resources\prompt.py" CopyToOutputDirectory="PreserveNewest" /><Content Include="..\Sources\HerdrHUD\Resources\watch.py" Link="Resources\watch.py" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
 </Project>
