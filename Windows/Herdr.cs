@@ -113,17 +113,19 @@ public sealed class HerdrClient
         foreach (var id in cache.Keys.Where(id => !machines.Any(m => m.Id == id)).ToArray()) cache.Remove(id);
         return new JsonObject { ["agents"] = all, ["machines"] = states, ["discoveryError"] = error };
     }
-    async Task<(Machine Machine, JsonObject Agent)> Resolve(string id)
+    // Prompts re-read the saved machines before sending. Reads skip that extra
+    // Herdr call; the pane identity check below still refuses replaced agents.
+    async Task<(Machine Machine, JsonObject Agent)> Resolve(string id, bool checkMachines = true)
     {
         if (!bindings.TryGetValue(id, out var binding)) throw new InvalidOperationException("Agent is offline or changed. Refresh and select it again.");
-        if (!(await Discover()).Contains(binding.Machine)) throw new InvalidOperationException("This machine's Herdr configuration changed. Refresh before sending.");
+        if (checkMachines && !(await Discover()).Contains(binding.Machine)) throw new InvalidOperationException("This machine's Herdr configuration changed. Refresh before sending.");
         var current = (await Rows(binding.Machine, "agent")).FirstOrDefault(r => r.Text("pane_id") == binding.Agent.Text("pane_id"));
         if (current is null || Key(binding.Machine, current) != id || current.Text("workspace_id") != binding.Agent.Text("workspace_id") || current.Text("agent") != binding.Agent.Text("agent")) throw new InvalidOperationException("The selected agent was replaced. Select its new session.");
         return (binding.Machine, current);
     }
     public async Task<JsonObject> Output(string id)
     {
-        var (machine, agent) = await Resolve(id);
+        var (machine, agent) = await Resolve(id, checkMachines: false);
         return new JsonObject { ["id"] = id, ["provider"] = agent.Text("agent"), ["text"] = await Call(machine, ["agent", "read", agent.Text("pane_id"), "--source", "recent-unwrapped", "--lines", "180"]) };
     }
     public async Task<JsonObject> Prompt(string id, string message)

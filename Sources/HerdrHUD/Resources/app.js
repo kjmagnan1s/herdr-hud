@@ -4,50 +4,65 @@ const post=data=>window.webkit?.messageHandlers?.hud ? window.webkit.messageHand
 if(window.chrome?.webview)window.chrome.webview.addEventListener('message',event=>window.receive(event.data));
 let agents=[],selected='',opened=false,mode='chat',filter='',reading=false,sending=false,requestSequence=0,lastOutput='',lastRendered='',selectionEpoch=0;
 let baseline=false,unread=new Set(),drafts=new Map(),outputs=new Map(),since=new Map(),uncertain=new Set(),promptByRequest=new Map();
+let names=new Map(),parsed=new Map(),failed=new Set(),wantSelected=false;
+const chatProviders=new Set(['codex','claude']);
+if(window.webkit?.messageHandlers?.hud)document.documentElement?.classList.add('glass'); // macOS draws a native blur behind the page.
 function request(op,extra={}){const requestID=`${Date.now()}-${++requestSequence}`;post({op,requestID,...extra});return requestID;}
 function active(){return agents.find(a=>a.id===selected);}
-function name(a){return a.tab_label||a.name||a.pane_id||'Agent';}
+function name(a){return names.get(a.id)||a.tab_label||a.name||a.pane_id||'Agent';}
+function parsedOutput(id,provider){const text=outputs.get(id)?.text||'';const hit=parsed.get(id);if(hit?.text===text&&hit.provider===provider)return hit.data;const data=HUDModel.parse(text,provider);parsed.set(id,{text,provider,data});return data;}
+function stateLabel(a){return !a.online?'Offline':a.agent_status==='blocked'?'Needs input':a.agent_status==='working'?'Working':unread.has(a.id)?'New':a.agent_status==='done'?'Done':a.agent_status==='idle'?'Idle':'Unknown';}
+function stateClass(a){return !a.online?'offline':a.agent_status==='blocked'?'blocked':a.agent_status==='working'?'working':unread.has(a.id)?'unread':a.agent_status==='done'?'done':'idle';}
 function el(tag,text,cls){const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(cls)node.className=cls;return node;}
 function notice(text){$('notice').hidden=!text;$('notice').textContent=text;}
 function badge(){post({op:'badge',count:agents.filter(a=>a.agent_status==='blocked'||unread.has(a.id)).length});}
 function renderRoster(){
-  $('count').textContent=agents.length;const roster=$('roster'),scroll=roster.scrollTop;
+  $('count').textContent=agents.length;const roster=$('roster'),scroll=roster.scrollTop,multiMachine=new Set(agents.map(a=>a.machine_id)).size>1;
   const items=HUDModel.sorted(agents,unread).filter(a=>`${name(a)} ${a.workspace_label} ${a.machine_label} ${a.agent}`.toLowerCase().includes(filter));
-  roster.replaceChildren(...items.map(a=>{const button=el('button',undefined,'agent'+(a.id===selected?' selected':'')+(!a.online?' offline':''));button.setAttribute('aria-pressed',String(a.id===selected));
-    const title=el('div',undefined,'agent-title');title.append(el('span',undefined,'dot '+(a.agent_status==='working'?'busy':a.agent_status==='blocked'||unread.has(a.id)?'attention':'')),el('span',name(a)));button.append(title);
-    const meta=el('div',undefined,'agent-meta');meta.append(el('div',a.workspace_label||a.workspace_id),el('div',a.machine_label+' · '+(a.agent||'agent')),el('div',a.online?a.agent_status:'Offline','agent-state'));button.append(meta);const metadata=HUDModel.parse(outputs.get(a.id)?.text||'',a.agent);button.title=metadata.model?`${metadata.model} ${metadata.reasoning}`:a.pane_id;button.onclick=()=>select(a.id);return button;}));
+  roster.replaceChildren(...items.map(a=>{const state=stateClass(a);const button=el('button',undefined,'agent '+state+(a.id===selected?' selected':''));button.setAttribute('aria-pressed',String(a.id===selected));
+    const title=el('div',undefined,'agent-title');title.append(el('span',undefined,'dot '+state),el('span',name(a),'agent-name'),el('span',stateLabel(a),'badge '+state));button.append(title);
+    const meta=[a.workspace_label||a.workspace_id,a.agent||'agent'];if(multiMachine)meta.push(a.machine_label);button.append(el('div',meta.filter(Boolean).join(' · '),'agent-meta'));
+    const metadata=parsedOutput(a.id,a.agent),preview=HUDModel.preview(metadata);if(preview)button.append(el('div',preview,'agent-preview'));
+    button.title=[meta.join(' · '),metadata.model&&`${metadata.model} ${metadata.reasoning}`.trim()].filter(Boolean).join('\n');button.onclick=()=>select(a.id);return button;}));
   if(!items.length)roster.append(el('p',agents.length?'No matching agents.':'No agents found. Start an agent in Herdr.','empty'));roster.scrollTop=scroll;
 }
 function select(id){
   drafts.set(selected,$('prompt').value);selected=id;request('preferences',{selectedAgent:id});selectionEpoch++;lastRendered='';$('prompt').value=drafts.get(id)||'';
-  lastOutput=outputs.get(id)?.text||'';renderRoster();renderHeader();renderOutput();read();
+  lastOutput=outputs.get(id)?.text||'';renderRoster();renderHeader();renderOutput();wantSelected=true;read();
+}
+// An agent's id changes when its session starts or restarts in the same pane.
+// Keep the user looking at that pane, with their draft and any send guard intact.
+function rebind(oldID,newID){
+  if(drafts.has(oldID)){drafts.set(newID,drafts.get(oldID));drafts.delete(oldID);}
+  if(uncertain.has(oldID)){uncertain.add(newID);uncertain.delete(oldID);}
+  if(outputs.has(oldID)&&!outputs.has(newID))outputs.set(newID,{...outputs.get(oldID),id:newID});
+  if(selected===oldID){selected=newID;request('preferences',{selectedAgent:newID});lastRendered='';}
 }
 function renderHeader(){
-  const a=active();$('title').textContent=a?name(a):'Select an agent';$('identity').textContent=a?`${a.workspace_label} · ${a.machine_label} · ${a.agent}`:'Your configured Herdr machines appear automatically';
+  const a=active();$('title').textContent=a?name(a):'Select an agent';$('identity').textContent=a?[a.workspace_label,a.machine_label,a.agent].filter(Boolean).join(' · '):'Your configured Herdr machines appear automatically';
   const state=a?.agent_status||'';const busy=state==='working';$('working').hidden=!busy;
   if(busy&&!since.has(a.id))since.set(a.id,Date.now());
   $('send').disabled=!a?.online||!['idle','done'].includes(state)||sending||uncertain.has(selected)||!$('prompt').value.trim();
-  $('prompt').disabled=!a;$('chat').disabled=a?.agent!=='codex';
+  $('prompt').disabled=!a;$('chat').disabled=!chatProviders.has(a?.agent);
   $('send-status').textContent=sending?'Sending once…':uncertain.has(selected)?'Delivery uncertain. Inspect this agent in Herdr before sending again.':!a?'Choose an agent to get started.':!a.online?'Machine offline. Your draft is retained.':state==='blocked'?'Needs your input in Herdr. Native approvals remain in its terminal.':busy?'Agent is working. You can draft the next prompt here.':['idle','done'].includes(state)?'Ready for your next prompt.':'Agent state is unknown. Sending is disabled.';
   $('reconcile').hidden=!uncertain.has(selected);
 }
-function inline(text,parent){ // No terminal text is ever interpreted as HTML.
-  for(const part of text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g)){if(part.startsWith('**')&&part.endsWith('**'))parent.append(el('strong',part.slice(2,-2)));else if(part.startsWith('`')&&part.endsWith('`'))parent.append(el('code',part.slice(1,-1)));else parent.append(document.createTextNode(part));}
-}
+function inline(text,parent){HUDRender.inline(text,parent);} // No terminal text is ever interpreted as HTML.
 function renderOutput(){
-  const a=active(),out=$('output'),data=HUDModel.parse(lastOutput,a?.agent||'');const terminal=mode==='terminal'||a?.agent!=='codex';
+  const a=active(),out=$('output'),data=HUDModel.parse(lastOutput,a?.agent||'');const terminal=mode==='terminal'||!chatProviders.has(a?.agent);
   const signature=JSON.stringify([selected,lastOutput,terminal]);if(signature===lastRendered)return;const wasBottom=out.scrollHeight-out.scrollTop-out.clientHeight<70,scroll=out.scrollTop;const first=!lastRendered;lastRendered=signature;
-  const expanded=new Set([...out.querySelectorAll('details[open]')].map(n=>n.dataset.key));out.replaceChildren();
+  const expanded=new Set([...out.querySelectorAll('details[open]')].map(n=>n.dataset.key));out.replaceChildren();out.classList.toggle('terminal',terminal);
   if(!lastOutput)out.append(el('p',a?'Loading recent output…':'Select an agent to read its recent output.','empty'));
   else if(terminal||!data.blocks.length)out.append(el('pre',data.text));
-  else data.blocks.forEach((block,index)=>{const node=el('div',undefined,'block '+block.kind);
-    if(block.kind==='tool'){const detail=el('details');detail.dataset.key=block.kind+block.text.split('\n')[0]+index;detail.open=expanded.has(detail.dataset.key);detail.append(el('summary',block.text.split('\n')[0]),el('pre',block.text));node.append(detail);}
-    else{if(block.kind==='prompt')node.append(el('div','You','block-label'));else if(block.kind==='reply')node.append(el('div',data.model||a.agent,'block-label'));inline(block.text,node);}out.append(node);});
-  if(data.model){$('title').title=`${data.model} ${data.reasoning}`;for(const button of $('roster').children)if(button.getAttribute('aria-pressed')==='true')button.title=`${data.model} ${data.reasoning}`;}
+  else HUDRender.conversation(out,data,a,expanded);
+  if(data.model){$('title').title=`${data.model} ${data.reasoning}`.trim();}
   $('chat').setAttribute('aria-pressed',String(!terminal));$('terminal').setAttribute('aria-pressed',String(terminal));
   out.scrollTop=first||wasBottom?out.scrollHeight:scroll;
 }
-function read(){if(!opened||reading||!active()?.online)return;reading=true;request('output',{id:selected});}
+function read(){if(!opened||reading||!active()?.online)return;reading=true;wantSelected=false;request('output',{id:selected});}
+// While the panel is open and idle, load agents the HUD has not read yet, one at
+// a time, so switching to them shows their conversation immediately.
+function prefetch(){if(!opened||reading)return;const next=agents.find(a=>a.online&&a.id!==selected&&!outputs.has(a.id)&&!failed.has(a.id));if(!next)return;reading=true;request('output',{id:next.id});}
 function send(){if($('send').disabled)return;const id=selected,message=$('prompt').value;sending=true;notice('');const requestID=request('prompt',{id,message});promptByRequest.set(requestID,{id,message});renderHeader();}
 window.receive=({type,data})=>{
   if(type==='roster'){
@@ -55,19 +70,21 @@ window.receive=({type,data})=>{
     if(baseline)for(const a of agents){const old=before.find(b=>b.id===a.id);if(old&&a.online&&old.online&&old.agent_status!==a.agent_status)unread.add(a.id);}
     const updates=baseline?HUDModel.alerts(before,agents):[];baseline=true;
     for(const a of agents){if(a.agent_status==='working'&&!since.has(a.id))since.set(a.id,Date.now());if(a.agent_status!=='working')since.delete(a.id);}
-    const valid=new Set(agents.map(a=>a.id));unread=new Set([...unread].filter(id=>valid.has(id)));
+    const valid=new Set(agents.map(a=>a.id));names=HUDModel.labels(agents);
+    for(const old of before)if(!valid.has(old.id)){const next=agents.find(a=>!before.some(b=>b.id===a.id)&&HUDModel.pane(a)&&HUDModel.pane(a)===HUDModel.pane(old));if(next){rebind(old.id,next.id);if(unread.has(old.id))unread.add(next.id);}}
+    unread=new Set([...unread].filter(id=>valid.has(id)));for(const id of [...outputs.keys(),...parsed.keys()])if(!valid.has(id)){outputs.delete(id);parsed.delete(id);}failed=new Set([...failed].filter(id=>valid.has(id)));
     if(updates.length&&!opened){const a=updates[0];request('alertPreview',{id:a.id,title:name(a)+(a.agent_status==='blocked'?' needs input':' finished')});}
     $('machines').replaceChildren(...(data.machines||[]).map(m=>{const node=el('span',undefined,'machine');node.append(el('span',undefined,'dot '+(m.online?'online':'')),document.createTextNode(`${m.label} · ${m.online?`${m.count} agents`:'offline'}`));node.title=m.error||'';return node;}));
     if(data.discoveryError)notice('Herdr setup: '+data.discoveryError);
-    if(!selected&&agents.length)select(agents[0].id);renderRoster();renderHeader();badge();read();
-  }else if(type==='visibility'){opened=data.open;if(opened){renderHeader();read();}}
+    if((!selected||!valid.has(selected))&&agents.length)select(agents[0].id);renderRoster();renderHeader();badge();read();prefetch();
+  }else if(type==='visibility'){opened=data.open;if(opened){renderHeader();wantSelected=true;read();}}
   else if(type==='resetBaseline'){baseline=false;}
   else if(type==='select'){select(data.id);}
   else if(type==='alertPreview'){if(!opened){const parsed=HUDModel.parse(data.text,data.provider),reply=parsed.blocks.filter(x=>x.kind==='reply').at(-1)?.text||'';post({op:'alert',id:data.id,title:data.title,preview:reply.replace(/\s+/g,' ').slice(0,200)||'Click to read the latest output'});}}
   else if(type==='output'){
-    reading=false;if(data.error){if(data.id===selected)notice(data.error);return;}
-    outputs.set(data.id,data);if(data.id!==selected){read();return;}
-    lastOutput=data.text;notice('');if(opened){unread.delete(selected);badge();}renderOutput();renderRoster();
+    reading=false;if(data.error){if(data.id===selected)notice(data.error);else failed.add(data.id);if(wantSelected)read();else prefetch();return;}
+    outputs.set(data.id,data);if(data.id!==selected){renderRoster();if(wantSelected)read();else prefetch();return;}
+    lastOutput=data.text;notice('');if(opened){unread.delete(selected);badge();}renderOutput();renderRoster();prefetch();
   }else if(type==='prompt'){
     const pending=promptByRequest.get(data.requestID);if(!pending)return;promptByRequest.delete(data.requestID);sending=false;
     if(data.error){notice(data.error);if(/uncertain/i.test(data.error))uncertain.add(pending.id);}

@@ -1,0 +1,48 @@
+  can open both PRs for this if you want.
+
+❯ the overlay text is hard to read, can you look at the parser
+  and the stylesheet?
+
+⏺ I'll start with the parser and the stylesheet.
+
+⏺ Read 2 files (ctrl+o to expand)
+
+⏺ Bash(npm test -- --reporter=dot)
+  ⎿  > herdr-hud@0.1.0 test
+     ✓ 12 passing (210ms)
+
+⏺ Explore(Find transcript rendering code)
+  ⎿  Done (9 tool uses · 31.4k tokens · 48s)
+
+⏺ Here is what I found:
+
+  ## Causes
+
+  1. **Speaker labels** only exist for `codex`.
+  2. Claude output falls back to a plain `<pre>`.
+     - nested detail line
+  - Tables render as box art:
+
+  ```js
+  const terminal = mode === 'terminal';
+  ❯ not a prompt inside a fence
+  ```
+
+  The fix is in model.js.
+
+⏺ Update(Sources/HerdrHUD/Resources/model.js)
+  ⎿  Updated model.js with 40 additions and 2 removals
+       10 +  function parseClaude(text){
+
+✻ Brewed for 4m 38s · done Thursday 8:36 PM
+
+※ recap: You're getting the deck ready for the 10/5 meeting. Next: open PRs
+  for both branches so the reviewer can see them.
+
+new task? /clear to save 410.4k tokens
+
+────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────
+  Opus 5.5 | 📁Documents | ████░░░░ 40% of 1000k tokens
+  ⏵⏵ auto mode on (shift+tab to cycle)

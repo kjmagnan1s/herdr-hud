@@ -27,7 +27,14 @@ final class HerdrClient {
     let execute: (Invocation) throws -> String
     let binary: String
     var cache: [String: [Row]] = [:]
-    var bindings: [String: (Machine, Row)] = [:]
+    // Snapshots write bindings on the transport queue while output reads use
+    // their own queue, so access goes through a lock.
+    private let bindingLock = NSLock()
+    private var boundAgents: [String: (Machine, Row)] = [:]
+    var bindings: [String: (Machine, Row)] {
+        get { bindingLock.lock(); defer { bindingLock.unlock() }; return boundAgents }
+        set { bindingLock.lock(); boundAgents = newValue; bindingLock.unlock() }
+    }
     var machines: [Machine] = []
     var discoveryError = ""
     init(binary: String? = nil, execute: ((Invocation) throws -> String)? = nil) {
@@ -101,10 +108,14 @@ final class HerdrClient {
         cache = cache.filter { id, _ in machines.contains(where: { $0.id == id }) }
         return ["agents":all, "machines":states, "discoveryError":discoveryError]
     }
-    func resolve(_ id: String) throws -> (Machine, Row) {
+    // Prompts re-read the saved machines before sending. Reads skip that extra
+    // Herdr call; the pane identity check below still refuses replaced agents.
+    func resolve(_ id: String, checkMachines: Bool = true) throws -> (Machine, Row) {
         guard let (machine, expected) = bindings[id] else { throw HUDError("Agent is offline or changed. Refresh and select it again.") }
-        let currentMachines = try discover()
-        guard currentMachines.contains(machine) else { throw HUDError("This machine's Herdr configuration changed. Refresh before sending.") }
+        if checkMachines {
+            let currentMachines = try discover()
+            guard currentMachines.contains(machine) else { throw HUDError("This machine's Herdr configuration changed. Refresh before sending.") }
+        }
         guard let current = try rows(machine, "agent").first(where: { ($0["pane_id"] as? String) == (expected["pane_id"] as? String) }),
               Self.key(machine, current) == id,
               (current["workspace_id"] as? String) == (expected["workspace_id"] as? String),
@@ -112,7 +123,7 @@ final class HerdrClient {
         return (machine, current)
     }
     func output(_ id: String) throws -> Row {
-        let (machine, row) = try resolve(id)
+        let (machine, row) = try resolve(id, checkMachines: false)
         return ["id":id, "provider":row["agent"] ?? "", "text":try call(machine, ["agent", "read", row["pane_id"] as! String, "--source", "recent-unwrapped", "--lines", "180"])]
     }
     func prompt(_ id: String, _ message: String) throws -> Row {

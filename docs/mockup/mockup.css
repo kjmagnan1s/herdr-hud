@@ -1,0 +1,23 @@
+/* Mockup page only: a stand-in game scene and a frame sized like the real panel. */
+body.mockup { margin: 0; height: 100vh; border: 0; border-radius: 0; background: #0b0d12; overflow: hidden; display: block; }
+.game { position: fixed; inset: 0; background: linear-gradient(#3b5d8c, #c98b5a 62%, #2c3b2a 62%); }
+.game .sun { position: absolute; width: 140px; height: 140px; border-radius: 50%; left: 70%; top: 18%; background: radial-gradient(#fff3c4, #f0b35a 60%, transparent 70%); }
+.game .hills { position: absolute; left: -10%; right: -10%; bottom: 30%; height: 22%; background: #3c4f37; border-radius: 50% 50% 0 0; }
+.game .hills.near { bottom: 0; height: 36%; background: #263322; border-radius: 40% 60% 0 0; }
+.game .unitframe { position: absolute; left: 24px; top: 20px; width: 190px; padding: 8px; color: #f5e7c0; font: 600 12px Georgia, serif; background: rgba(0,0,0,.55); border: 2px solid #b08a3e; border-radius: 6px; }
+.game .unitframe i { display: block; height: 8px; margin-top: 5px; background: #3ac24a; }
+.game .unitframe i.mana { background: #3a6bd8; width: 70%; }
+.game .actionbar { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; gap: 4px; }
+.game .actionbar span { width: 40px; height: 40px; border: 2px solid #8a6a2c; background: linear-gradient(135deg, #5a4630, #1f1810); border-radius: 4px; }
+body.no-game .game { display: none; }
+.controls { position: fixed; right: 16px; top: 12px; z-index: 2; display: flex; gap: 14px; padding: 6px 12px; border-radius: 8px; font: 12px system-ui, sans-serif; color: #eee; background: rgba(0,0,0,.6); }
+.frame {
+  position: absolute; left: 50%; top: 52px; transform: translateX(-50%);
+  width: min(960px, calc(100vw - 32px)); height: min(660px, calc(100vh - 68px));
+  display: flex; flex-direction: column; overflow: hidden;
+  background: var(--bg); border: 1px solid var(--border-strong); border-radius: var(--radius-panel);
+  box-shadow: 0 24px 60px rgba(0,0,0,.45);
+}
+/* Approximates the native macOS blur that the app draws behind the page. */
+:root.glass .frame { -webkit-backdrop-filter: blur(28px) saturate(1.4); backdrop-filter: blur(28px) saturate(1.4); }
+@media (max-width: 740px) { .frame { top: 48px; height: calc(100vh - 56px); } .controls { top: 8px; right: 8px; } }
