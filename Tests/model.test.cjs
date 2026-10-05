@@ -72,3 +72,15 @@ test('AskUserQuestion menus keep options across the rule drawn inside the menu',
   assert.equal(p.dialog.options.find(o=>o.selected).n,4);
   assert.equal(p.dialog.options[2].description,'Pure colors for bright game scenes');
 });
+test('real Claude Code screen from a user report: ● markers, hook results, update notice, 1M footer',()=>{
+  const p=parse(read('real-footer'),'claude');
+  assert.equal(p.model,'Opus 5.5');assert.equal(p.mode,'');assert.equal(p.dialog,null);
+  assert.deepEqual(p.blocks.map(b=>b.kind),['context','tool','status','status']);
+  assert.equal(p.blocks[1].title,'Ran 4 stop hooks');assert.match(p.blocks[1].result,/node: command not found/);
+  assert.equal(p.blocks[3].text,'✔ Update installed · Restart to update');
+  assert.ok(!p.blocks.some(b=>/cleanup on these folders/.test(b.text)));
+});
+test('a no-break space after the ❯ prompt still strips the prompt box',()=>{
+  const p=parse(read('real-footer').replace('❯ \n','❯\u00a0\n'),'claude');
+  assert.ok(!p.blocks.some(b=>/cleanup on these folders|1000k/.test(b.text)));assert.equal(p.model,'Opus 5.5');
+});

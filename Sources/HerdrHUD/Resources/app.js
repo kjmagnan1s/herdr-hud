@@ -56,12 +56,15 @@ function renderHeader(){
   $('reconcile').hidden=!uncertain.has(selected);
 }
 function inline(text,parent){HUDRender.inline(text,parent);} // No terminal text is ever interpreted as HTML.
+// Raw screen text. Claude's full-width divider lines would wrap into doubled
+// rules in a narrower panel, so they render as single lines clipped to width.
+function terminalText(text){const pre=el('pre');for(const line of text.split('\n')){if(/^\s*[─━]{8,}\s*$/.test(line))pre.append(el('span',line.trim(),'term-rule'));else pre.append(document.createTextNode(line+'\n'));}return pre;}
 function renderOutput(){
   const a=active(),out=$('output'),data=HUDModel.parse(lastOutput,a?.agent||'');const terminal=mode==='terminal'||!chatProviders.has(a?.agent);
   const signature=JSON.stringify([selected,lastOutput,terminal]);if(signature===lastRendered)return;const wasBottom=out.scrollHeight-out.scrollTop-out.clientHeight<70,scroll=out.scrollTop;const first=!lastRendered;lastRendered=signature;
   const expanded=new Set([...out.querySelectorAll('details[open]')].map(n=>n.dataset.key));out.replaceChildren();out.classList.toggle('terminal',terminal);
   if(!lastOutput)out.append(el('p',a?'Loading recent output…':'Select an agent to read its recent output.','empty'));
-  else if(terminal||!data.blocks.length)out.append(el('pre',data.text));
+  else if(terminal||!data.blocks.length)out.append(terminalText(data.text));
   else HUDRender.conversation(out,data,a,expanded);
   if(data.model){$('title').title=`${data.model} ${data.reasoning}`.trim();}
   $('chat').setAttribute('aria-pressed',String(!terminal));$('terminal').setAttribute('aria-pressed',String(terminal));

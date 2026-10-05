@@ -118,7 +118,8 @@
     return {start,type:kind,title:title===question?'':title,detail,question,options,hint:hints.join(' · ')};
   }
   function parseClaude(text){
-    let lines=text.replace(/\r/g,'').trimEnd().split('\n'),model='',reasoning='',footer=[];
+    // Claude Code pads its ❯ prompt with a no-break space; normalize it first.
+    let lines=text.replace(/\r/g,'').replace(/\u00a0/g,' ').trimEnd().split('\n'),model='',reasoning='',footer=[];
     // Strip the prompt box and status line: the last ❯ line that sits under a rule.
     for(let i=lines.length-1;i>=Math.max(0,lines.length-40);i--){
       if(!CLAUDE.prompt.test(lines[i])||/^❯\s*\d{1,2}[.)]\s/.test(lines[i]))continue;
@@ -129,7 +130,8 @@
     // directly under the transcript. Peel it off the end as well.
     if(!footer.length){let k=lines.length;while(k>0&&(!lines[k-1].trim()||CLAUDE.statusLine.test(lines[k-1])||CLAUDE.mode.test(lines[k-1])))k--;if(k<lines.length&&lines.slice(k).some(l=>l.trim())){footer=lines.slice(k);lines=lines.slice(0,k);}}
     const footerText=footer.join('\n'),found=CLAUDE.model.exec(footerText);if(found)model=`${found[1][0].toUpperCase()}${found[1].slice(1).toLowerCase()} ${found[2]}`;
-    const modeMatch=CLAUDE.mode.exec(footerText),mode=modeMatch?MODES[modeMatch[1].toLowerCase()]:footer.length?'Ask':'';
+    // Only a mode Claude Code names is shown; a missing line may just be off screen.
+    const modeMatch=CLAUDE.mode.exec(footerText),mode=modeMatch?MODES[modeMatch[1].toLowerCase()]:'';
     const dialog=extractDialog(lines);if(dialog)lines=lines.slice(0,dialog.start);
     const blocks=[];let block=null,fenced=false;
     const flush=()=>{

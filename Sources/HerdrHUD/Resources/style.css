@@ -295,6 +295,7 @@ aside {
 }
 #output.terminal { padding: var(--space-4) var(--space-5); background: var(--surface-sunken); }
 #output > pre { margin: 0; white-space: pre-wrap; word-break: break-word; font: var(--text-sm)/1.6 var(--mono); color: var(--text-soft); }
+.term-rule { display: block; overflow: hidden; white-space: nowrap; color: var(--text-faint); line-height: 1.2; }
 
 /* Turns: a speaker header, then that speaker's messages. */
 .turn { max-width: 760px; margin: 0 auto var(--space-5); }
