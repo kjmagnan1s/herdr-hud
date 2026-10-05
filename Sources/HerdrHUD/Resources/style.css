@@ -13,9 +13,9 @@
 
   /* Text */
   --text: #eceef2;
-  --text-soft: #c4c9d2;
-  --text-muted: #8f97a5;
-  --text-faint: #6b7381;
+  --text-soft: #d3d7de;
+  --text-muted: #aab1bd;
+  --text-faint: #8b93a1;
 
   /* Accent and state */
   --accent: #e8bd72;
@@ -115,8 +115,9 @@ header strong { font-size: var(--text-md); font-weight: 650; letter-spacing: -.1
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: var(--accent);
-  color: var(--accent-ink);
+  background: rgba(232, 189, 114, .2);
+  border: 1px solid rgba(232, 189, 114, .45);
+  color: var(--accent);
   font-size: 11px;
   font-weight: 800;
   flex-shrink: 0;
@@ -279,8 +280,9 @@ aside {
   border-radius: 50%;
   font-size: 10.5px;
   font-weight: 700;
-  color: var(--accent-ink);
-  background: var(--accent);
+  color: var(--accent);
+  background: rgba(232, 189, 114, .2);
+  border: 1px solid rgba(232, 189, 114, .45);
 }
 .turn.user .avatar { color: var(--text); background: var(--surface-raised); border: 1px solid var(--border-strong); }
 .speaker { font-size: var(--text-sm); font-weight: 650; }
@@ -418,6 +420,8 @@ textarea {
 .composer-actions { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-top: var(--space-2); }
 #hint { font-size: var(--text-xs); color: var(--text-faint); }
 #send { font-weight: 650; color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
+/* Disabled Send stays readable: light text on a neutral fill, never dimmed dark-on-gold. */
+#send:disabled { opacity: 1; color: var(--text-muted); background: var(--surface-raised); border-color: var(--border-strong); }
 #send:hover:not(:disabled) { filter: brightness(1.08); }
 #send span { margin-left: var(--space-2); }
 #reconcile { margin-top: var(--space-2); font-size: var(--text-xs); }
