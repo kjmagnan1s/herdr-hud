@@ -111,13 +111,13 @@
       turn=el('section',undefined,'turn '+kind);
       const head=el('div',undefined,'turn-head');
       head.append(el('span',kind==='user'?'Y':who[0],'avatar'),el('span',kind==='user'?'You':who,'speaker'));
-      if(kind==='agent'&&data.model)head.append(el('span',[data.model,data.reasoning].filter(Boolean).join(' '),'model'));
+      if(kind==='assistant'&&data.model)head.append(el('span',[data.model,data.reasoning].filter(Boolean).join(' '),'model'));
       body=el('div',undefined,'turn-body');turn.append(head,body);out.append(turn);
     };
     data.blocks.forEach((block,index)=>{
       const key=`${block.kind}:${(block.text||'').split('\n')[0]}:${index}`;
       if(block.kind==='prompt'){open('user');const bubble=el('div',undefined,'bubble');markdown(block.text,bubble);body.append(bubble);if(block.result)body.append(el('div',block.result,'note'));turn=null;return;}
-      if(!turn||turn.classList.contains('user'))open('agent');
+      if(!turn||turn.classList.contains('user'))open('assistant');
       if(block.kind==='tool'){run.push({block,key});return;}
       flushRun();
       if(block.kind==='agent')body.append(agentCard(block,key,expanded));
