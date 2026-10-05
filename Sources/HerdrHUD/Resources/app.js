@@ -56,9 +56,28 @@ function renderHeader(){
   $('reconcile').hidden=!uncertain.has(selected);
 }
 function inline(text,parent){HUDRender.inline(text,parent);} // No terminal text is ever interpreted as HTML.
-// Raw screen text. Claude's full-width divider lines would wrap into doubled
-// rules in a narrower panel, so they render as single lines clipped to width.
-function terminalText(text){const pre=el('pre');for(const line of text.split('\n')){if(/^\s*[─━]{8,}\s*$/.test(line))pre.append(el('span',line.trim(),'term-rule'));else pre.append(document.createTextNode(line+'\n'));}return pre;}
+// Raw screen text. Box-drawn tables keep their columns: they never wrap and
+// shrink to fit the panel, scrolling sideways past a readable floor. Divider
+// rules clip to the panel. Other lines wrap under their own indent and bullet,
+// so wrapped text stays aligned instead of falling back to the left edge.
+const BOX_LINE=/^\s*[┌├└│╭╰┃╞╘┐┤┘╮╯]/,RULE_LINE=/^\s*[─━]{8,}\s*$/,HANG=/^([-*•●⎿]|\d{1,3}[.)])\s+/;
+function terminalText(text){
+  const pre=el('pre',undefined,'term'),lines=text.split('\n');
+  for(let i=0;i<lines.length;i++){
+    const line=lines[i];
+    if(BOX_LINE.test(line)){const rows=[];while(i<lines.length&&(BOX_LINE.test(lines[i])||RULE_LINE.test(lines[i])&&BOX_LINE.test(lines[i+1]||'')))rows.push(lines[i++]);i--;pre.append(el('span',rows.join('\n'),'term-box'));continue;}
+    if(RULE_LINE.test(line)){pre.append(el('span',line.trim(),'term-rule'));continue;}
+    const body=line.trimStart(),indent=line.length-body.length,hang=(HANG.exec(body)?.[0].length)||0,row=el('span',body||' ','term-line');
+    row.style.paddingLeft=`${indent+hang}ch`;if(hang)row.style.textIndent=`-${hang}ch`;pre.append(row);
+  }
+  return pre;
+}
+function fitTerminal(){
+  for(const box of $('output').querySelectorAll('pre.term > .term-box')){
+    box.style.fontSize='';if(box.scrollWidth<=box.clientWidth)continue;
+    box.style.fontSize=Math.max(9,parseFloat(getComputedStyle(box).fontSize)*box.clientWidth/box.scrollWidth-.1)+'px';
+  }
+}
 function renderOutput(){
   const a=active(),out=$('output'),data=HUDModel.parse(lastOutput,a?.agent||'');const terminal=mode==='terminal'||!chatProviders.has(a?.agent);
   const signature=JSON.stringify([selected,lastOutput,terminal]);if(signature===lastRendered)return;const wasBottom=out.scrollHeight-out.scrollTop-out.clientHeight<70,scroll=out.scrollTop;const first=!lastRendered;lastRendered=signature;
@@ -68,7 +87,7 @@ function renderOutput(){
   else HUDRender.conversation(out,data,a,expanded);
   if(data.model){$('title').title=`${data.model} ${data.reasoning}`.trim();}
   $('chat').setAttribute('aria-pressed',String(!terminal));$('terminal').setAttribute('aria-pressed',String(terminal));
-  out.scrollTop=first||wasBottom?out.scrollHeight:scroll;
+  fitTerminal();out.scrollTop=first||wasBottom?out.scrollHeight:scroll;
 }
 function read(){if(!opened||reading||!active()?.online)return;reading=true;wantSelected=false;request('output',{id:selected});}
 // While the panel is open and idle, load agents the HUD has not read yet, one at
@@ -118,6 +137,7 @@ $('prompt').onkeydown=e=>{
     input.dispatchEvent(new Event('input',{bubbles:true}));
   }else if(!e.repeat){send();}
 };
+new ResizeObserver(()=>fitTerminal()).observe($('output'));
 for(const view of ['chat','terminal'])$(view).onclick=()=>{mode=view;request('preferences',{mode});lastRendered='';renderOutput();};
 const divider=$('divider');divider.onpointerdown=e=>{divider.setPointerCapture(e.pointerId);};divider.onpointermove=e=>{if(divider.hasPointerCapture(e.pointerId)){const aside=document.querySelector('aside');aside.style.width=Math.min(Math.max(e.clientX-aside.getBoundingClientRect().left,56),innerWidth*.42)+'px';}};
 divider.onpointerup=()=>request('preferences',{rosterWidth:document.querySelector('aside').offsetWidth});

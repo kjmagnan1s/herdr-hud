@@ -16,6 +16,23 @@
     }
   }
 
+  // Claude Code draws Markdown tables with box characters and wraps long cells
+  // onto extra lines inside each row. Rebuild them as real tables so they fit
+  // the panel; anything irregular (diagrams, ragged rows) stays as drawn.
+  function boxTable(rows){
+    const groups=[];let cur=null;
+    for(const row of rows){
+      const t=row.trim();if(/^[┌├└╭╰╞╘┏┣┗]/.test(t)){cur=null;continue;}
+      if(!/^[│┃].*[│┃]$/.test(t))return null;
+      const cells=t.slice(1,-1).split(/[│┃]/).map(c=>c.trim());
+      if(!cur){cur=cells.map(()=>[]);groups.push(cur);}else if(cells.length!==cur.length)return null;
+      cells.forEach((c,k)=>{if(c)cur[k].push(c);});
+    }
+    if(groups.length<2||groups[0].length<2)return null;
+    const table=el('table',undefined,'md-table');
+    groups.forEach((group,r)=>{const tr=el('tr');for(const parts of group){const cell=el(r?'td':'th');inline(parts.join(' '),cell);tr.append(cell);}table.append(tr);});
+    const wrap=el('div',undefined,'md-table-wrap');wrap.append(table);return wrap;
+  }
   // A small, forgiving Markdown subset: paragraphs, headings, lists, quotes,
   // fenced code, pipe tables, and the box-drawn tables Claude Code prints.
   function markdown(text,parent){
@@ -30,7 +47,7 @@
       }
       if(/^\s*[┌├└│╭╰┃╞╘]/.test(line)){
         breakFlow();const rows=[];while(i<lines.length&&/^\s*[┌├└│╭╰┃╞╘┐┤┘]/.test(lines[i]))rows.push(lines[i++]);
-        parent.append(el('pre',rows.join('\n'),'md-code md-art'));continue;
+        parent.append(boxTable(rows)||el('pre',rows.join('\n'),'md-code md-art'));continue;
       }
       if(/^\s*\|.*\|\s*$/.test(line)){
         breakFlow();const rows=[];while(i<lines.length&&/^\s*\|.*\|\s*$/.test(lines[i]))rows.push(lines[i++]);
