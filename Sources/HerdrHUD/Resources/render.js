@@ -90,6 +90,30 @@
     return card;
   }
 
+  // A permission prompt or question Claude is waiting on. The HUD only types
+  // text, so the card shows the choices and sends the user to Herdr to answer.
+  function dialogCard(block,live){
+    const permission=block.type==='permission';
+    const card=el('div',undefined,`dialog ${permission?'permission':'question'}${live?' live':''}`);
+    const head=el('div',undefined,'dialog-head');
+    head.append(el('span',permission?'Permission needed':'Question','chip'));
+    if(block.title)head.append(el('span',block.title,'dialog-title'));
+    card.append(head);
+    if(block.detail)card.append(el('pre',block.detail,'dialog-detail'));
+    if(block.question)card.append(el('div',block.question,'dialog-question'));
+    const list=el('ol',undefined,'dialog-options');
+    for(const option of block.options||[]){
+      const item=el('li',undefined,'dialog-option'+(option.selected?' selected':''));
+      item.append(el('span',String(option.n),'dialog-n'));
+      const text=el('span',undefined,'dialog-label');text.append(el('span',option.label));
+      if(option.description)text.append(el('span',option.description,'dialog-desc'));
+      item.append(text);list.append(item);
+    }
+    card.append(list);
+    card.append(el('div',live?'Answer in Herdr. The HUD can only send text prompts, so it never picks an option for you.':'This was on screen when the HUD last read the agent.','dialog-note'));
+    return card;
+  }
+
   // Builds the chat view: one turn per speaker, tools folded into compact rows,
   // subagents in their own cards, and status lines as quiet footnotes.
   function conversation(out,data,agent,expanded){
@@ -121,6 +145,7 @@
       if(block.kind==='tool'){run.push({block,key});return;}
       flushRun();
       if(block.kind==='agent')body.append(agentCard(block,key,expanded));
+      else if(block.kind==='dialog')body.append(dialogCard(block,agent?.agent_status==='blocked'));
       else if(block.kind==='status'){body.append(el('div',block.text,'status-line'));}
       else if(block.kind==='recap'){const recap=el('div',undefined,'recap');recap.append(el('div','Recap','recap-label'));markdown(block.text,recap);body.append(recap);}
       else{const reply=el('div',undefined,'reply'+(block.kind==='context'?' context':''));markdown(block.text,reply);body.append(reply);}

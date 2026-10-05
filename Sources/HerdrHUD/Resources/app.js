@@ -22,8 +22,8 @@ function renderRoster(){
   $('count').textContent=agents.length;const roster=$('roster'),scroll=roster.scrollTop,multiMachine=new Set(agents.map(a=>a.machine_id)).size>1;
   const items=HUDModel.sorted(agents,unread).filter(a=>`${name(a)} ${a.workspace_label} ${a.machine_label} ${a.agent}`.toLowerCase().includes(filter));
   roster.replaceChildren(...items.map(a=>{const state=stateClass(a);const button=el('button',undefined,'agent '+state+(a.id===selected?' selected':''));button.setAttribute('aria-pressed',String(a.id===selected));
-    const meta=[a.workspace_label||a.workspace_id,a.agent||'agent'];if(multiMachine)meta.push(a.machine_label);
-    const metadata=parsedOutput(a.id,a.agent),preview=HUDModel.preview(metadata);
+    const metadata=parsedOutput(a.id,a.agent),preview=metadata.dialog&&a.agent_status==='blocked'?metadata.dialog.question||metadata.dialog.title:HUDModel.preview(metadata);
+    const meta=[a.workspace_label||a.workspace_id,a.agent||'agent'];if(metadata.mode)meta.push(metadata.mode==='Ask'?'Asks permission':`${metadata.mode} mode`);if(multiMachine)meta.push(a.machine_label);
     button.append(el('span',undefined,'dot '+state),el('span',name(a),'agent-name'),el('span',stateLabel(a),'badge '+state),el('span',initials(name(a)),'agent-abbr'));
     if(preview)button.append(el('span',preview,'agent-sub'));
     button.append(el('span',meta.filter(Boolean).join(' · '),'agent-meta'));
@@ -43,7 +43,7 @@ function rebind(oldID,newID){
   if(selected===oldID){selected=newID;request('preferences',{selectedAgent:newID});lastRendered='';}
 }
 function renderHeader(){
-  const a=active();$('title').textContent=a?name(a):'Select an agent';$('identity').textContent=a?[a.workspace_label,a.machine_label,a.agent].filter(Boolean).join(' · '):'Your configured Herdr machines appear automatically';
+  const a=active();$('title').textContent=a?name(a):'Select an agent';const mode=a&&typeof HUDModel!=='undefined'?parsedOutput(a.id,a.agent).mode:'';$('identity').textContent=a?[a.workspace_label,a.machine_label,a.agent,mode&&(mode==='Ask'?'asks permission':`${mode.toLowerCase()} mode`)].filter(Boolean).join(' · '):'Your configured Herdr machines appear automatically';
   const state=a?.agent_status||'';const busy=state==='working';$('working').hidden=!busy;
   if(busy&&!since.has(a.id))since.set(a.id,Date.now());
   $('send').disabled=!a?.online||!['idle','done'].includes(state)||sending||uncertain.has(selected)||!$('prompt').value.trim();
@@ -84,7 +84,7 @@ window.receive=({type,data})=>{
   }else if(type==='visibility'){opened=data.open;if(opened){renderHeader();wantSelected=true;read();}}
   else if(type==='resetBaseline'){baseline=false;}
   else if(type==='select'){select(data.id);}
-  else if(type==='alertPreview'){if(!opened){const parsed=HUDModel.parse(data.text,data.provider),reply=parsed.blocks.filter(x=>x.kind==='reply').at(-1)?.text||'';post({op:'alert',id:data.id,title:data.title,preview:reply.replace(/\s+/g,' ').slice(0,200)||'Click to read the latest output'});}}
+  else if(type==='alertPreview'){if(!opened){const parsed=HUDModel.parse(data.text,data.provider),reply=parsed.dialog?[parsed.dialog.title,parsed.dialog.question].filter(Boolean).join(': '):parsed.blocks.filter(x=>x.kind==='reply').at(-1)?.text||'';post({op:'alert',id:data.id,title:data.title,preview:reply.replace(/\s+/g,' ').slice(0,200)||'Click to read the latest output'});}}
   else if(type==='output'){
     reading=false;if(data.error){if(data.id===selected)notice(data.error);else failed.add(data.id);if(wantSelected)read();else prefetch();return;}
     outputs.set(data.id,data);if(data.id!==selected){renderRoster();if(wantSelected)read();else prefetch();return;}

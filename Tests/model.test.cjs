@@ -39,3 +39,26 @@ test('pane identity survives a session change and preview prefers the latest pro
   assert.equal(pane({}),'');
   assert.equal(preview(parse(claude,'claude')),'the overlay text is hard to read, can you look at the parser and the stylesheet?');
 });
+const read=name=>fs.readFileSync(path.join(__dirname,`fixtures/claude-${name}.txt`),'utf8');
+test('Claude permission prompt becomes a dialog block and the mode is read from the status line',()=>{
+  const p=parse(read('permission'),'claude');
+  assert.equal(p.mode,'Accept edits');assert.equal(p.model,'Opus 5.5');
+  assert.deepEqual(p.blocks.map(b=>b.kind),['prompt','reply','tool','dialog']);
+  assert.equal(p.dialog.type,'permission');assert.equal(p.dialog.title,'Bash command');
+  assert.equal(p.dialog.detail,'rm -rf build/\nRemove stale build output');
+  assert.equal(p.dialog.question,'Do you want to proceed?');
+  assert.deepEqual(p.dialog.options.map(o=>[o.n,o.selected]),[[1,true],[2,false],[3,false]]);
+});
+test('Claude AskUserQuestion becomes a question dialog with option descriptions',()=>{
+  const p=parse(read('question'),'claude');
+  assert.deepEqual(p.blocks.map(b=>b.kind),['prompt','reply','dialog']);
+  assert.equal(p.dialog.type,'question');assert.equal(p.dialog.title,'Quarter');
+  assert.equal(p.dialog.question,'Which quarter should slide 7 report?');
+  assert.equal(p.dialog.options[0].description,'What the spreadsheet has today');
+  assert.equal(p.dialog.options.length,3);
+});
+test('a reply that asks a question with a numbered list is not a dialog',()=>{
+  const p=parse('⏺ Do you want to proceed with one of these?\n\n  1. Merge now\n  2. Wait for review','claude');
+  assert.equal(p.dialog,null);assert.equal(p.blocks[0].kind,'reply');
+  assert.equal(parse(claude,'claude').mode,'Auto');
+});

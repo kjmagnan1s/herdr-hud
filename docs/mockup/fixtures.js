@@ -11,7 +11,8 @@
     agent('p2', 'Documents', '1', 'claude', 'blocked'),
     agent('p3', 'Documents', '1', 'claude', 'idle'),
     agent('p4', 'Documents', 'deck audit', 'claude', 'done'),
-    agent('p5', 'api-server', '1', 'codex', 'idle')
+    agent('p5', 'api-server', '1', 'codex', 'idle'),
+    agent('p6', 'build-scripts', '1', 'claude', 'blocked')
   ];
   const footer = `
 ────────────────────────────────────────────────────────────────────────
@@ -69,17 +70,39 @@
 ⏺ Task(Cross-check figures against the spreadsheet)
   ⎿  Done (14 tool uses · 52.0k tokens · 2m 3s)
 
-⏺ Two numbers on slide 7 don't match the source. Before I change them I need
-  to know which quarter you want to report:
+⏺ Two numbers on slide 7 don't match the source spreadsheet.
 
-  - **Q2 actuals** (what the spreadsheet has today)
-  - **Q2 forecast** (what the deck says now)
+────────────────────────────────────────────────────────────────────────
+ ☐ Quarter
 
-✻ Cooked for 3m 12s
+Which quarter should slide 7 report?
 
- Do you want to proceed?
- ❯ 1. Use Q2 actuals
-   2. Keep the forecast` + footer,
+❯ 1. Q2 actuals
+     What the spreadsheet has today
+  2. Q2 forecast
+     What the deck says now
+  3. Type something.
+
+Enter to select · ↑/↓ to navigate · Esc to cancel`,
+    p6: `❯ clean the build folder and rebuild
+
+⏺ I'll remove the stale build output first.
+
+⏺ Bash(rm -rf build/)
+
+╭───────────────────────────────────────────────────────────────────────╮
+│ Bash command                                                          │
+│                                                                       │
+│   rm -rf build/                                                       │
+│   Remove stale build output                                           │
+│                                                                       │
+│ Do you want to proceed?                                               │
+│ ❯ 1. Yes                                                              │
+│   2. Yes, and don't ask again for rm commands in ~/build-scripts      │
+│   3. No, and tell Claude what to do differently (esc)                 │
+╰───────────────────────────────────────────────────────────────────────╯
+  Opus 5.5 | 📁build-scripts | ███░░░░░ 31% of 1000k tokens
+  ⏵⏵ accept edits on (shift+tab to cycle)`,
     p3: `❯ yeah update brain summary files
 
 ⏺ Updated the three summary files and pushed them to the brain repo.

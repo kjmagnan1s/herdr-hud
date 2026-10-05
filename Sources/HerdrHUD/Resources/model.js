@@ -64,6 +64,47 @@
     agentResult:/\d+ tool uses?\b/,
     model:/\b(Opus|Sonnet|Haiku|Fable)\s*([\d.]+)/i
   };
+  const MODES={'auto mode':'Auto','accept edits':'Accept edits','plan mode':'Plan','bypass permissions':'Bypass'};
+  Object.assign(CLAUDE,{
+    mode:/(auto mode|accept edits|plan mode|bypass permissions) on\b/i,
+    statusLine:/^\s+.*\b(?:Opus|Sonnet|Haiku|Fable)\s*[\d.]+.*[|·]/,
+    option:/^(\s*)(❯\s*)?(\d{1,2})[.)]\s+(.+)$/,
+    ask:/(Enter to select|Esc to cancel|↑\/↓ to navigate|Tab to amend)/i,
+    boxTop:/^\s*╭/,boxBottom:/^\s*╰/
+  });
+  // A permission prompt or AskUserQuestion dialog waiting at the bottom of the
+  // screen. Box drawing is stripped; options keep their numbers and the cursor.
+  function extractDialog(lines){
+    const from=Math.max(0,lines.length-45);let anchor=-1;
+    for(let i=lines.length-1;i>=from;i--){const t=lines[i].replace(/^[\s│┃]+|[\s│┃]+$/g,'');if(CLAUDE.ask.test(t)||/^❯\s*\d{1,2}[.)]\s/.test(t)){anchor=i;break;}}
+    if(anchor<0)return null;
+    let start=anchor;
+    for(let i=anchor;i>=from;i--){
+      if(CLAUDE.boxTop.test(lines[i])||CLAUDE.rule.test(lines[i])){start=i;break;}
+      if(i<anchor&&!CLAUDE.option.test(lines[i])&&(CLAUDE.reply.test(lines[i])||CLAUDE.prompt.test(lines[i])||CLAUDE.status.test(lines[i]))){start=i+1;break;}
+      start=i;
+    }
+    const raw=lines.slice(start).filter(l=>!CLAUDE.boxTop.test(l)&&!CLAUDE.boxBottom.test(l)&&!CLAUDE.rule.test(l)).map(l=>l.replace(/^\s*[│┃]/,'').replace(/[│┃]\s*$/,'').replace(/\s+$/,''));
+    const body=trimBlank(dedent(raw));
+    const options=[],text=[],hints=[];
+    for(const line of body){
+      const m=CLAUDE.option.exec(line);
+      if(m){options.push({n:Number(m[3]),label:m[4].trim(),selected:!!m[2]});continue;}
+      if(/(Enter to select|Esc to cancel|↑\/↓|Tab to amend|ctrl\+\w to)/i.test(line)){hints.push(line.trim());continue;}
+      if(options.length&&/^\s{2,}\S/.test(line)){const last=options.at(-1);last.description=[last.description,line.trim()].filter(Boolean).join(' ');continue;}
+      if(!options.length)text.push(line);
+    }
+    // Only a live cursor on a numbered option or the dialog's key hints count, so
+    // a reply that merely asks a question never becomes a dialog.
+    if(!options.length||!(options.some(o=>o.selected)||hints.length))return null;
+    const content=trimBlank(text),qi=content.map(l=>l.trim()).findLastIndex(l=>/\?$/.test(l));
+    const question=qi>=0?content[qi].trim():'';
+    const before=qi>=0?content.slice(0,qi):content;
+    const title=(before.find(l=>l.trim())||'').trim().replace(/^[☐☒✔]\s*/,'');
+    const detail=trimBlank(dedent(before.slice(before.findIndex(l=>l.trim())+1))).join('\n');
+    const kind=/Do you want to|Would you like to/i.test(question)?'permission':'question';
+    return {start,type:kind,title:title===question?'':title,detail,question,options,hint:hints.join(' · ')};
+  }
   function parseClaude(text){
     let lines=text.replace(/\r/g,'').trimEnd().split('\n'),model='',reasoning='',footer=[];
     // Strip the prompt box and status line: the last ❯ line that sits under a rule.
@@ -72,7 +113,12 @@
       let j=i-1;while(j>=0&&!lines[j].trim())j--;
       if(j>=0&&CLAUDE.rule.test(lines[j])){footer=lines.slice(j);lines=lines.slice(0,j);break;}
     }
-    const found=CLAUDE.model.exec(footer.join('\n'));if(found)model=`${found[1][0].toUpperCase()}${found[1].slice(1).toLowerCase()} ${found[2]}`;
+    // While a dialog is open the prompt box is gone, so the status line sits
+    // directly under the transcript. Peel it off the end as well.
+    if(!footer.length){let k=lines.length;while(k>0&&(!lines[k-1].trim()||CLAUDE.statusLine.test(lines[k-1])||CLAUDE.mode.test(lines[k-1])))k--;if(k<lines.length&&lines.slice(k).some(l=>l.trim())){footer=lines.slice(k);lines=lines.slice(0,k);}}
+    const footerText=footer.join('\n'),found=CLAUDE.model.exec(footerText);if(found)model=`${found[1][0].toUpperCase()}${found[1].slice(1).toLowerCase()} ${found[2]}`;
+    const modeMatch=CLAUDE.mode.exec(footerText),mode=modeMatch?MODES[modeMatch[1].toLowerCase()]:footer.length?'Ask':'';
+    const dialog=extractDialog(lines);if(dialog)lines=lines.slice(0,dialog.start);
     const blocks=[];let block=null,fenced=false;
     const flush=()=>{
       if(!block)return;
@@ -111,7 +157,8 @@
       start('status',line);flush();
     }
     flush();
-    return {text:lines.join('\n').trimEnd(),model,reasoning,blocks};
+    if(dialog){delete dialog.start;blocks.push({kind:'dialog',text:[dialog.title,dialog.question].filter(Boolean).join('\n'),...dialog});}
+    return {text:lines.join('\n').trimEnd(),model,reasoning,mode,dialog,blocks};
   }
 
   function parse(text,provider){
@@ -128,5 +175,5 @@
     return (prompt||reply||'').replace(/\s+/g,' ').trim().slice(0,140);
   }
 
-  const api={sorted,alerts,parse,identity,pane,labels,preview,chatProviders};if(typeof module!=='undefined')module.exports=api;else root.HUDModel=api;
+  const api={sorted,alerts,parse,identity,pane,labels,preview,chatProviders,extractDialog};if(typeof module!=='undefined')module.exports=api;else root.HUDModel=api;
 })(globalThis);
