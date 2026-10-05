@@ -16,14 +16,18 @@ function stateClass(a){return !a.online?'offline':a.agent_status==='blocked'?'bl
 function el(tag,text,cls){const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(cls)node.className=cls;return node;}
 function notice(text){$('notice').hidden=!text;$('notice').textContent=text;}
 function badge(){post({op:'badge',count:agents.filter(a=>a.agent_status==='blocked'||unread.has(a.id)).length});}
+// Two-character label for the narrow roster rail: "Documents 2" → "D2", "herdr-hud" → "HH".
+function initials(text){const words=String(text).split(/[\s_.-]+/).filter(Boolean);const tail=/\d+$/.exec(text)?.[0];return ((words[0]?.[0]||'?')+(tail||words[1]?.[0]||words[0]?.[1]||'')).toUpperCase().slice(0,3);}
 function renderRoster(){
   $('count').textContent=agents.length;const roster=$('roster'),scroll=roster.scrollTop,multiMachine=new Set(agents.map(a=>a.machine_id)).size>1;
   const items=HUDModel.sorted(agents,unread).filter(a=>`${name(a)} ${a.workspace_label} ${a.machine_label} ${a.agent}`.toLowerCase().includes(filter));
   roster.replaceChildren(...items.map(a=>{const state=stateClass(a);const button=el('button',undefined,'agent '+state+(a.id===selected?' selected':''));button.setAttribute('aria-pressed',String(a.id===selected));
-    const title=el('div',undefined,'agent-title');title.append(el('span',undefined,'dot '+state),el('span',name(a),'agent-name'),el('span',stateLabel(a),'badge '+state));button.append(title);
-    const meta=[a.workspace_label||a.workspace_id,a.agent||'agent'];if(multiMachine)meta.push(a.machine_label);button.append(el('div',meta.filter(Boolean).join(' · '),'agent-meta'));
-    const metadata=parsedOutput(a.id,a.agent),preview=HUDModel.preview(metadata);if(preview)button.append(el('div',preview,'agent-preview'));
-    button.title=[meta.join(' · '),metadata.model&&`${metadata.model} ${metadata.reasoning}`.trim()].filter(Boolean).join('\n');button.onclick=()=>select(a.id);return button;}));
+    const meta=[a.workspace_label||a.workspace_id,a.agent||'agent'];if(multiMachine)meta.push(a.machine_label);
+    const metadata=parsedOutput(a.id,a.agent),preview=HUDModel.preview(metadata);
+    button.append(el('span',undefined,'dot '+state),el('span',name(a),'agent-name'),el('span',stateLabel(a),'badge '+state),el('span',initials(name(a)),'agent-abbr'));
+    if(preview)button.append(el('span',preview,'agent-sub'));
+    button.append(el('span',meta.filter(Boolean).join(' · '),'agent-meta'));
+    button.title=[name(a)+' · '+stateLabel(a),meta.join(' · '),metadata.model&&`${metadata.model} ${metadata.reasoning}`.trim()].filter(Boolean).join('\n');button.onclick=()=>select(a.id);return button;}));
   if(!items.length)roster.append(el('p',agents.length?'No matching agents.':'No agents found. Start an agent in Herdr.','empty'));roster.scrollTop=scroll;
 }
 function select(id){
@@ -89,7 +93,7 @@ window.receive=({type,data})=>{
     const pending=promptByRequest.get(data.requestID);if(!pending)return;promptByRequest.delete(data.requestID);sending=false;
     if(data.error){notice(data.error);if(/uncertain/i.test(data.error))uncertain.add(pending.id);}
     else{if(selected===pending.id&&$('prompt').value===pending.message)$('prompt').value='';if(drafts.get(pending.id)===pending.message)drafts.delete(pending.id);notice('Prompt sent.');request('refresh');}renderHeader();
-  }else if(type==='preferences'){if(data.selectedAgent&&!selected)selected=data.selectedAgent;if(data.rosterWidth>=155)document.querySelector('aside').style.width=data.rosterWidth+'px';mode=data.mode||'chat';}
+  }else if(type==='preferences'){if(data.selectedAgent&&!selected)selected=data.selectedAgent;if(data.rosterWidth>=56)document.querySelector('aside').style.width=data.rosterWidth+'px';mode=data.mode||'chat';}
   else if(type==='notice'){notice(data.message);}
 };
 document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!event.isComposing){event.preventDefault();request('close');}});
@@ -108,9 +112,9 @@ $('prompt').onkeydown=e=>{
   }else if(!e.repeat){send();}
 };
 for(const view of ['chat','terminal'])$(view).onclick=()=>{mode=view;request('preferences',{mode});lastRendered='';renderOutput();};
-const divider=$('divider');divider.onpointerdown=e=>{divider.setPointerCapture(e.pointerId);};divider.onpointermove=e=>{if(divider.hasPointerCapture(e.pointerId)){document.querySelector('aside').style.width=Math.min(Math.max(e.clientX,155),innerWidth*.42)+'px';}};
+const divider=$('divider');divider.onpointerdown=e=>{divider.setPointerCapture(e.pointerId);};divider.onpointermove=e=>{if(divider.hasPointerCapture(e.pointerId)){const aside=document.querySelector('aside');aside.style.width=Math.min(Math.max(e.clientX-aside.getBoundingClientRect().left,56),innerWidth*.42)+'px';}};
 divider.onpointerup=()=>request('preferences',{rosterWidth:document.querySelector('aside').offsetWidth});
-divider.onkeydown=e=>{if(['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();const aside=document.querySelector('aside');aside.style.width=Math.min(Math.max(aside.offsetWidth+(e.key==='ArrowLeft'?-15:15),155),innerWidth*.42)+'px';request('preferences',{rosterWidth:aside.offsetWidth});}};
+divider.onkeydown=e=>{if(['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();const aside=document.querySelector('aside');aside.style.width=Math.min(Math.max(aside.offsetWidth+(e.key==='ArrowLeft'?-15:15),56),innerWidth*.42)+'px';request('preferences',{rosterWidth:aside.offsetWidth});}};
 setInterval(()=>{const a=active();if(a?.agent_status==='working'){const seconds=Math.max(0,Math.floor((Date.now()-(since.get(a.id)||Date.now()))/1000));$('work-text').textContent=`Working · ${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')} observed`; }},1000);
 request('ready');
 // Read-only integration check used by --verify-ui; never presses Send.
