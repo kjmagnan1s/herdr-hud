@@ -84,3 +84,20 @@ test('a no-break space after the ❯ prompt still strips the prompt box',()=>{
   const p=parse(read('real-footer').replace('❯ \n','❯\u00a0\n'),'claude');
   assert.ok(!p.blocks.some(b=>/cleanup on these folders|1000k/.test(b.text)));assert.equal(p.model,'Opus 5.5');
 });
+require('../Sources/HerdrHUD/Resources/render.js');
+const {boxTable}=globalThis.HUDRender;
+test('Claude box tables rebuild into rows with wrapped cells joined',()=>{
+  const p=parse(fs.readFileSync(path.join(__dirname,'fixtures/claude-box-table.txt'),'utf8'),'claude');
+  const lines=p.blocks[0].text.split('\n').filter(l=>/^\s*[┌├└│]/.test(l));
+  const grid=boxTable(lines);
+  assert.deepEqual(grid.head,['Project','What happened','Outcome']);
+  assert.deepEqual(grid.rows[0],['Mountain Gate','stopped one phase into its plan','ran to schedule; next cycle 2030']);
+  assert.equal(grid.rows.length,3);
+  assert.deepEqual(grid.rows[2],['`harbor.js`','**paused** for review','pending']);
+});
+test('box tables with only a header rule keep one row per line; box art stays art',()=>{
+  const grid=boxTable(['┌───┬───┐','│ a │ b │','├───┼───┤','│ 1 │ 2 │','│ 3 │ 4 │','└───┴───┘']);
+  assert.deepEqual(grid,{head:['a','b'],rows:[['1','2'],['3','4']]});
+  assert.equal(boxTable(['╭──────╮','│ hi   │','╰──────╯']),null);
+  assert.equal(boxTable(['│ a │ b │','│ c │']),null);
+});

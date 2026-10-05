@@ -43,11 +43,17 @@
   2. Status lines like "Brewed for 4m" sit in the same text as the reply.
   3. The roster names come from tab labels, and Herdr names tabs \`1\`, \`2\`…
 
-  | Area | Today | Proposed |
-  |---|---|---|
-  | Claude chat | Raw terminal | Turns with speakers |
-  | Tool calls | Inline text | One folded line each |
-  | Subagents | Inline text | Their own card |
+  ┌─────────────┬──────────────────────────┬──────────────────────────┐
+  │ Area        │ Today                    │ Proposed                 │
+  ├─────────────┼──────────────────────────┼──────────────────────────┤
+  │ Claude chat │ one raw terminal block   │ turns with speakers,     │
+  │             │ with no speakers         │ replies set in prose     │
+  ├─────────────┼──────────────────────────┼──────────────────────────┤
+  │ Tool calls  │ inline text              │ one folded line each     │
+  ├─────────────┼──────────────────────────┼──────────────────────────┤
+  │ Subagents   │ inline text mixed into   │ their own card           │
+  │             │ the reply                │                          │
+  └─────────────┴──────────────────────────┴──────────────────────────┘
 
   \`\`\`js
   const terminal = mode === 'terminal' || !chatProviders.has(agent);

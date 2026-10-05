@@ -356,10 +356,13 @@ code { font: .88em var(--mono); padding: 1px 5px; border-radius: 4px; background
   font: var(--text-sm)/1.55 var(--mono);
 }
 .md-code code { padding: 0; background: none; font: inherit; }
-.md-table-wrap { overflow-x: auto; margin: .4em 0 .9em; }
-.md-table { border-collapse: collapse; font-size: var(--text-md); }
-.md-table th, .md-table td { padding: 5px 10px; border: 1px solid var(--border); text-align: left; vertical-align: top; }
-.md-table th { background: var(--surface-raised); font-weight: 600; }
+.md-table-wrap { overflow-x: auto; margin: .4em 0 .9em; border: 1px solid var(--border); border-radius: 8px; }
+.md-table { width: 100%; border-collapse: collapse; font-size: var(--text-md); line-height: 1.45; }
+.md-table th, .md-table td { padding: 6px 10px; text-align: left; vertical-align: top; overflow-wrap: break-word; }
+.md-table th { background: var(--surface-raised); font-weight: 600; color: var(--text); border-bottom: 1px solid var(--border); }
+.md-table td { color: var(--text-soft); border-top: 1px solid var(--border); }
+.md-table tbody tr:first-child td { border-top: 0; }
+.md-table td:first-child { color: var(--text); font-weight: 500; }
 .link { color: #9cc4ff; text-decoration: underline; text-decoration-color: rgba(156, 196, 255, .4); }
 
 /* Tool calls: one quiet line each, details on demand. */

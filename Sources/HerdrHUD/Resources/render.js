@@ -16,6 +16,43 @@
     }
   }
 
+  // Claude Code draws Markdown tables with box characters and wraps long
+  // cells onto extra lines inside the same row. Rebuild the grid so the HUD can
+  // show a real table that reflows to the panel width. Returns null for box
+  // art that is not a table (single column boxes, ragged rows), which stays
+  // preformatted.
+  const BOX_RULE=/^\s*[┌├└╞╘╭╰┍┝┕┎┠┖][─━═┬┼┴┯┿┷╤╪╧┰╂┸\s]*[┐┤┘╡╛╮╯┑┥┙┒┨┚]?\s*$/;
+  function boxTable(lines){
+    const middle=line=>/^\s*[├╞┝┠]/.test(line)&&BOX_RULE.test(line);
+    const separators=lines.filter(middle).length;
+    const groups=[];let current=null,headEnd=-1;
+    for(const line of lines){
+      if(BOX_RULE.test(line)){if(middle(line)&&headEnd<0)headEnd=groups.length;current=null;continue;}
+      const t=line.trim();
+      if(!/^[│┃]/.test(t)||!/[│┃]$/.test(t))return null;
+      const cells=t.slice(1,-1).split(/[│┃]/).map(c=>c.trim());
+      if(cells.length<2)return null;
+      // With a rule between every row, extra lines are wrapped cell text.
+      // With only a header rule, each body line is its own row.
+      if(!current||(separators<2&&headEnd>=0)){current=[];groups.push(current);}
+      current.push(cells);
+    }
+    if(!groups.length)return null;
+    const width=groups[0][0].length;
+    if(groups.some(g=>g.some(cells=>cells.length!==width)))return null;
+    const rows=groups.map(g=>Array.from({length:width},(_,c)=>g.map(cells=>cells[c]).filter(Boolean).join(' ')));
+    return headEnd===1?{head:rows[0],rows:rows.slice(1)}:{head:null,rows};
+  }
+
+  function tableNode(head,rows){
+    const table=el('table',undefined,'md-table');
+    if(head){const tr=el('tr');for(const c of head){const th=el('th');inline(c,th);tr.append(th);}const thead=el('thead');thead.append(tr);table.append(thead);}
+    const tbody=el('tbody');
+    for(const row of rows){const tr=el('tr');for(const c of row){const td=el('td');inline(c,td);tr.append(td);}tbody.append(tr);}
+    table.append(tbody);
+    const wrap=el('div',undefined,'md-table-wrap');wrap.append(table);return wrap;
+  }
+
   // A small, forgiving Markdown subset: paragraphs, headings, lists, quotes,
   // fenced code, pipe tables, and the box-drawn tables Claude Code prints.
   function markdown(text,parent){
@@ -30,19 +67,16 @@
       }
       if(/^\s*[┌├└│╭╰┃╞╘]/.test(line)){
         breakFlow();const rows=[];while(i<lines.length&&/^\s*[┌├└│╭╰┃╞╘┐┤┘]/.test(lines[i]))rows.push(lines[i++]);
-        parent.append(el('pre',rows.join('\n'),'md-code md-art'));continue;
+        const grid=boxTable(rows);
+        if(grid)parent.append(tableNode(grid.head,grid.rows));
+        else parent.append(el('pre',rows.join('\n'),'md-code md-art'));
+        continue;
       }
       if(/^\s*\|.*\|\s*$/.test(line)){
         breakFlow();const rows=[];while(i<lines.length&&/^\s*\|.*\|\s*$/.test(lines[i]))rows.push(lines[i++]);
-        const table=el('table',undefined,'md-table'),separator=/^:?-{2,}:?$/;
-        const hasHead=rows.length>1&&rows[1].trim().slice(1,-1).split('|').every(c=>separator.test(c.trim()));
-        rows.forEach((row,r)=>{
-          const cells=row.trim().slice(1,-1).split('|').map(c=>c.trim());
-          if(hasHead&&r===1)return;
-          const tr=el('tr');for(const c of cells){const cell=el(hasHead&&r===0?'th':'td');inline(c,cell);tr.append(cell);}
-          table.append(tr);
-        });
-        const wrap=el('div',undefined,'md-table-wrap');wrap.append(table);parent.append(wrap);continue;
+        const separator=/^:?-{2,}:?$/,split=row=>row.trim().slice(1,-1).split('|').map(c=>c.trim());
+        const hasHead=rows.length>1&&split(rows[1]).every(c=>separator.test(c));
+        parent.append(tableNode(hasHead?split(rows[0]):null,rows.filter((_,r)=>!hasHead||r>1).map(split)));continue;
       }
       if((m=/^\s{0,3}(#{1,4})\s+(.*)$/.exec(line))){breakFlow();const h=el('div',undefined,`md-h md-h${m[1].length}`);inline(m[2].replace(/\s+#+\s*$/,''),h);parent.append(h);i++;continue;}
       if(/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)){breakFlow();parent.append(el('hr'));i++;continue;}
@@ -153,5 +187,5 @@
     flushRun();
   }
 
-  const api={inline,markdown,conversation};root.HUDRender=api;
+  const api={inline,markdown,conversation,boxTable};root.HUDRender=api;
 })(globalThis);
