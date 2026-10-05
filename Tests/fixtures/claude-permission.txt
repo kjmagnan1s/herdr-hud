@@ -12,7 +12,7 @@
 │                                                                       │
 │ Do you want to proceed?                                               │
 │ ❯ 1. Yes                                                              │
-│   2. Yes, and don't ask again for rm commands in /Users/me/project    │
+│   2. Yes, and don't ask again for similar commands in /Users/me/project│
 │   3. No, and tell Claude what to do differently (esc)                 │
 ╰───────────────────────────────────────────────────────────────────────╯
   Opus 5.5 | 📁project | ███░░░░░ 31% of 1000k tokens

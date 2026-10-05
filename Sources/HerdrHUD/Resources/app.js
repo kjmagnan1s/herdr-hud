@@ -11,18 +11,22 @@ function request(op,extra={}){const requestID=`${Date.now()}-${++requestSequence
 function active(){return agents.find(a=>a.id===selected);}
 function name(a){return names.get(a.id)||a.tab_label||a.name||a.pane_id||'Agent';}
 function parsedOutput(id,provider){const text=outputs.get(id)?.text||'';const hit=parsed.get(id);if(hit?.text===text&&hit.provider===provider)return hit.data;const data=HUDModel.parse(text,provider);parsed.set(id,{text,provider,data});return data;}
-function stateLabel(a){return !a.online?'Offline':a.agent_status==='blocked'?'Needs input':a.agent_status==='working'?'Working':unread.has(a.id)?'New':a.agent_status==='done'?'Done':a.agent_status==='idle'?'Idle':'Unknown';}
-function stateClass(a){return !a.online?'offline':a.agent_status==='blocked'?'blocked':a.agent_status==='working'?'working':unread.has(a.id)?'unread':a.agent_status==='done'?'done':'idle';}
+// Herdr can report an open Claude question menu as idle (herdrdev/herdr#4824).
+// When the last read shows a live dialog, treat the agent as blocked so the HUD
+// never offers to type into the menu.
+function status(a){if(!a)return '';if(a.agent_status!=='blocked'&&typeof HUDModel!=='undefined'&&outputs.has(a.id)&&parsedOutput(a.id,a.agent).dialog)return 'blocked';return a.agent_status||'';}
+function stateLabel(a){return !a.online?'Offline':status(a)==='blocked'?'Needs input':a.agent_status==='working'?'Working':unread.has(a.id)?'New':a.agent_status==='done'?'Done':a.agent_status==='idle'?'Idle':'Unknown';}
+function stateClass(a){return !a.online?'offline':status(a)==='blocked'?'blocked':a.agent_status==='working'?'working':unread.has(a.id)?'unread':a.agent_status==='done'?'done':'idle';}
 function el(tag,text,cls){const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(cls)node.className=cls;return node;}
 function notice(text){$('notice').hidden=!text;$('notice').textContent=text;}
-function badge(){post({op:'badge',count:agents.filter(a=>a.agent_status==='blocked'||unread.has(a.id)).length});}
+function badge(){post({op:'badge',count:agents.filter(a=>status(a)==='blocked'||unread.has(a.id)).length});}
 // Two-character label for the narrow roster rail: "Documents 2" → "D2", "herdr-hud" → "HH".
 function initials(text){const words=String(text).split(/[\s_.-]+/).filter(Boolean);const tail=/\d+$/.exec(text)?.[0];return ((words[0]?.[0]||'?')+(tail||words[1]?.[0]||words[0]?.[1]||'')).toUpperCase().slice(0,3);}
 function renderRoster(){
   $('count').textContent=agents.length;const roster=$('roster'),scroll=roster.scrollTop,multiMachine=new Set(agents.map(a=>a.machine_id)).size>1;
   const items=HUDModel.sorted(agents,unread).filter(a=>`${name(a)} ${a.workspace_label} ${a.machine_label} ${a.agent}`.toLowerCase().includes(filter));
   roster.replaceChildren(...items.map(a=>{const state=stateClass(a);const button=el('button',undefined,'agent '+state+(a.id===selected?' selected':''));button.setAttribute('aria-pressed',String(a.id===selected));
-    const metadata=parsedOutput(a.id,a.agent),preview=metadata.dialog&&a.agent_status==='blocked'?metadata.dialog.question||metadata.dialog.title:HUDModel.preview(metadata);
+    const metadata=parsedOutput(a.id,a.agent),preview=metadata.dialog&&status(a)==='blocked'?metadata.dialog.question||metadata.dialog.title:HUDModel.preview(metadata);
     const meta=[a.workspace_label||a.workspace_id,a.agent||'agent'];if(metadata.mode)meta.push(metadata.mode==='Ask'?'Asks permission':`${metadata.mode} mode`);if(multiMachine)meta.push(a.machine_label);
     button.append(el('span',undefined,'dot '+state),el('span',name(a),'agent-name'),el('span',stateLabel(a),'badge '+state),el('span',initials(name(a)),'agent-abbr'));
     if(preview)button.append(el('span',preview,'agent-sub'));
@@ -44,7 +48,7 @@ function rebind(oldID,newID){
 }
 function renderHeader(){
   const a=active();$('title').textContent=a?name(a):'Select an agent';const mode=a&&typeof HUDModel!=='undefined'?parsedOutput(a.id,a.agent).mode:'';$('identity').textContent=a?[a.workspace_label,a.machine_label,a.agent,mode&&(mode==='Ask'?'asks permission':`${mode.toLowerCase()} mode`)].filter(Boolean).join(' · '):'Your configured Herdr machines appear automatically';
-  const state=a?.agent_status||'';const busy=state==='working';$('working').hidden=!busy;
+  const state=status(a);const busy=state==='working';$('working').hidden=!busy;
   if(busy&&!since.has(a.id))since.set(a.id,Date.now());
   $('send').disabled=!a?.online||!['idle','done'].includes(state)||sending||uncertain.has(selected)||!$('prompt').value.trim();
   $('prompt').disabled=!a;$('chat').disabled=!chatProviders.has(a?.agent);

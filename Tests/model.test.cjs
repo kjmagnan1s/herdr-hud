@@ -62,3 +62,13 @@ test('a reply that asks a question with a numbered list is not a dialog',()=>{
   assert.equal(p.dialog,null);assert.equal(p.blocks[0].kind,'reply');
   assert.equal(parse(claude,'claude').mode,'Auto');
 });
+test('AskUserQuestion menus keep options across the rule drawn inside the menu',()=>{
+  // Layout from herdrdev/herdr#4824: a rule above "Chat about this" and one below the footer.
+  const p=parse(read('question-rules'),'claude');
+  assert.deepEqual(p.blocks.map(b=>b.kind),['reply','dialog']);
+  assert.equal(p.dialog.question,'Which palette should the badges use?');
+  assert.equal(p.dialog.title,'Palette');
+  assert.deepEqual(p.dialog.options.map(o=>o.label),['Warm','Cool','High contrast','Type something.','Chat about this']);
+  assert.equal(p.dialog.options.find(o=>o.selected).n,4);
+  assert.equal(p.dialog.options[2].description,'Pure colors for bright game scenes');
+});

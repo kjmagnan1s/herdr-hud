@@ -145,7 +145,7 @@
       if(block.kind==='tool'){run.push({block,key});return;}
       flushRun();
       if(block.kind==='agent')body.append(agentCard(block,key,expanded));
-      else if(block.kind==='dialog')body.append(dialogCard(block,agent?.agent_status==='blocked'));
+      else if(block.kind==='dialog')body.append(dialogCard(block,true));
       else if(block.kind==='status'){body.append(el('div',block.text,'status-line'));}
       else if(block.kind==='recap'){const recap=el('div',undefined,'recap');recap.append(el('div','Recap','recap-label'));markdown(block.text,recap);body.append(recap);}
       else{const reply=el('div',undefined,'reply'+(block.kind==='context'?' context':''));markdown(block.text,reply);body.append(reply);}

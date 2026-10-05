@@ -78,10 +78,20 @@
     const from=Math.max(0,lines.length-45);let anchor=-1;
     for(let i=lines.length-1;i>=from;i--){const t=lines[i].replace(/^[\s│┃]+|[\s│┃]+$/g,'');if(CLAUDE.ask.test(t)||/^❯\s*\d{1,2}[.)]\s/.test(t)){anchor=i;break;}}
     if(anchor<0)return null;
-    let start=anchor;
+    // Walk up to the dialog's top edge. AskUserQuestion draws rules inside its
+    // menu (above "Chat about this"), so a rule only ends the dialog once the
+    // walk has passed option 1.
+    let start=anchor,passedFirst=false;
+    const optionAt=i=>CLAUDE.option.exec(lines[i].replace(/^\s*[│┃]/,''));
     for(let i=anchor;i>=from;i--){
-      if(CLAUDE.boxTop.test(lines[i])||CLAUDE.rule.test(lines[i])){start=i;break;}
-      if(i<anchor&&!CLAUDE.option.test(lines[i])&&(CLAUDE.reply.test(lines[i])||CLAUDE.prompt.test(lines[i])||CLAUDE.status.test(lines[i]))){start=i+1;break;}
+      if(CLAUDE.boxTop.test(lines[i])){start=i;break;}
+      if(CLAUDE.rule.test(lines[i])){
+        let j=i-1;while(j>=from&&!lines[j].trim())j--;
+        if(!passedFirst&&j>=from&&(optionAt(j)||/^\s{3,}\S/.test(lines[j]))){start=i;continue;}
+        start=i;break;
+      }
+      const option=optionAt(i);if(option&&Number(option[3])===1)passedFirst=true;
+      if(i<anchor&&!option&&(CLAUDE.reply.test(lines[i])||CLAUDE.prompt.test(lines[i])||CLAUDE.status.test(lines[i]))){start=i+1;break;}
       start=i;
     }
     const raw=lines.slice(start).filter(l=>!CLAUDE.boxTop.test(l)&&!CLAUDE.boxBottom.test(l)&&!CLAUDE.rule.test(l)).map(l=>l.replace(/^\s*[│┃]/,'').replace(/[│┃]\s*$/,'').replace(/\s+$/,''));
@@ -100,7 +110,9 @@
     const content=trimBlank(text),qi=content.map(l=>l.trim()).findLastIndex(l=>/\?$/.test(l));
     const question=qi>=0?content[qi].trim():'';
     const before=qi>=0?content.slice(0,qi):content;
-    const title=(before.find(l=>l.trim())||'').trim().replace(/^[☐☒✔]\s*/,'');
+    let title=(before.find(l=>l.trim())||'').trim();
+    // A multi-question tab bar ("← ☐ Color  ☐ Size  ✔ Submit →") is not a title.
+    title=(title.match(/[☐☒✔]/g)||[]).length>1?'':title.replace(/^[☐☒✔]\s*/,'');
     const detail=trimBlank(dedent(before.slice(before.findIndex(l=>l.trim())+1))).join('\n');
     const kind=/Do you want to|Would you like to/i.test(question)?'permission':'question';
     return {start,type:kind,title:title===question?'':title,detail,question,options,hint:hints.join(' · ')};
@@ -109,7 +121,7 @@
     let lines=text.replace(/\r/g,'').trimEnd().split('\n'),model='',reasoning='',footer=[];
     // Strip the prompt box and status line: the last ❯ line that sits under a rule.
     for(let i=lines.length-1;i>=Math.max(0,lines.length-40);i--){
-      if(!CLAUDE.prompt.test(lines[i]))continue;
+      if(!CLAUDE.prompt.test(lines[i])||/^❯\s*\d{1,2}[.)]\s/.test(lines[i]))continue;
       let j=i-1;while(j>=0&&!lines[j].trim())j--;
       if(j>=0&&CLAUDE.rule.test(lines[j])){footer=lines.slice(j);lines=lines.slice(0,j);break;}
     }
