@@ -8,6 +8,7 @@ jobs:
   # server that this job starts itself. No user agent is ever involved.
   linux:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -22,6 +23,7 @@ jobs:
           HERDR_BIN="$RUNNER_TEMP/herdr" python3 -m unittest -v Tests/test_watch_bridge.py
   macos:
     runs-on: macos-latest
+    timeout-minutes: 30
     needs: linux
     steps:
       - uses: actions/checkout@v5
@@ -34,6 +36,7 @@ jobs:
           path: dist/Herdr-HUD-macOS-arm64.zip
   windows:
     runs-on: windows-latest
+    timeout-minutes: 30
     needs: linux
     steps:
       - uses: actions/checkout@v5
