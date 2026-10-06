@@ -166,11 +166,16 @@ class RealHerdrTests(unittest.TestCase):
             change = bridge.until('changed')
             self.assertEqual((change['event'], change['pane_id'], change['agent_status']), ('pane.agent_status_changed', pane, 'working'))
             rpc('tab.create', {'workspace_id': pane.split(':')[0]})
-            # A structure event resubscribes, so how many changes precede the
-            # next ready depends on how Herdr batches them. Collect until ready.
+            # The first structure event resubscribes, so which of tab_created and
+            # pane_created arrives first depends on Herdr. Events in that gap are
+            # covered by the HUD's forced refresh on ready.
             events = set()
             while (value := bridge.line())['type'] != 'ready': events.add(value.get('event'))
-            self.assertIn('tab_created', events); self.assertEqual(value['agents'], 1)
+            self.assertTrue(events & {'tab_created', 'pane_created'}, events); self.assertEqual(value['agents'], 1)
+            # The new subscription still carries the agent's status.
+            rpc('pane.report_agent', {'pane_id': pane, 'source': 'custom:hud-test', 'agent': 'codex', 'state': 'idle'})
+            while (value := bridge.until('changed'))['event'] != 'pane.agent_status_changed': pass
+            self.assertEqual((value['pane_id'], value['agent_status']), (pane, 'idle'))
         finally:
             if bridge: bridge.stop()
             run('server', 'stop'); server.wait(10); shutil.rmtree(home, ignore_errors=True)
