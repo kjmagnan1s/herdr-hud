@@ -166,8 +166,11 @@ class RealHerdrTests(unittest.TestCase):
             change = bridge.until('changed')
             self.assertEqual((change['event'], change['pane_id'], change['agent_status']), ('pane.agent_status_changed', pane, 'working'))
             rpc('tab.create', {'workspace_id': pane.split(':')[0]})
-            events = {bridge.line()['event'] for _ in range(2)}
-            self.assertIn('tab_created', events); self.assertEqual(bridge.until('ready')['agents'], 1)
+            # A structure event resubscribes, so how many changes precede the
+            # next ready depends on how Herdr batches them. Collect until ready.
+            events = set()
+            while (value := bridge.line())['type'] != 'ready': events.add(value.get('event'))
+            self.assertIn('tab_created', events); self.assertEqual(value['agents'], 1)
         finally:
             if bridge: bridge.stop()
             run('server', 'stop'); server.wait(10); shutil.rmtree(home, ignore_errors=True)
