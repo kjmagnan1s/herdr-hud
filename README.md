@@ -78,6 +78,10 @@ run the packaged app. Xcode command-line tools are needed to build from source.
 - Drag the roster divider to resize it. Visibility, position, view, and divider
   width are remembered. Prompt drafts are kept per agent while the app runs.
 - Agents needing attention sort first, then working agents, then read idle agents.
+- Each agent is a card, like the Claude app's session list: an icon colored by
+  state, the title, how long ago its state changed, and your latest ask below.
+  Hover a card for its workspace, machine and mode. Machines are only named in
+  the header while one is offline.
 - H shows the most urgent state: a red ring and badge count agents that need input,
   otherwise a blue badge counts unread results. An amber arc turns while any agent works.
 - Silent alerts appear above H (below it near the top edge) after an agent finishes or needs input.

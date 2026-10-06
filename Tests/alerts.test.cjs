@@ -68,3 +68,12 @@ test('no alerts while the panel is open, and opening it clears the backlog',()=>
   p.window.receive({type:'visibility',data:{open:true}});
   assert.equal(ops(p.roster([agent('a','done')]),'alert').length+ops(p.messages,'alertPreview').length,0);
 });
+
+test('roster cards show how long ago the state changed, like the Claude app',()=>{
+  const now=Date.UTC(2026,9,6,12);
+  assert.equal(model.ago(now-20e3,now),'now');
+  assert.equal(model.ago(now-4*60e3,now),'4m');
+  assert.equal(model.ago(now-125*60e3,now),'2h');
+  assert.equal(model.ago(now-3*1440*60e3,now),'3d');
+  assert.equal(model.ago(now+5e3,now),'now');
+});

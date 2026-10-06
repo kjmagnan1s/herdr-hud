@@ -189,6 +189,12 @@
     return (prompt||reply||'').replace(/\s+/g,' ').trim().slice(0,140);
   }
 
+  // Short relative time for roster cards, like the Claude app: now, 4m, 2h, 3d.
+  function ago(then,now){
+    const minutes=Math.floor(Math.max(0,now-then)/60000);
+    return minutes<1?'now':minutes<60?`${minutes}m`:minutes<1440?`${Math.floor(minutes/60)}h`:`${Math.floor(minutes/1440)}d`;
+  }
+
   // One toast for every alert the user has not looked at yet: needs input
   // first, then finished. items are {agent, tone:'blocked'|'done'}.
   function summary(items,nameOf){
@@ -201,5 +207,5 @@
     return {id:ordered[0].agent.id,tone:blocked.length?'blocked':'done',title,preview:names.join(', ').slice(0,200),count:ordered.length};
   }
 
-  const api={sorted,alerts,summary,parse,identity,pane,labels,preview,chatProviders,extractDialog};if(typeof module!=='undefined')module.exports=api;else root.HUDModel=api;
+  const api={sorted,alerts,summary,parse,identity,pane,labels,preview,ago,chatProviders,extractDialog};if(typeof module!=='undefined')module.exports=api;else root.HUDModel=api;
 })(globalThis);
