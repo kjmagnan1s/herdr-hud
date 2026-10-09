@@ -201,8 +201,13 @@ public sealed class HerdrClient
         var (machine, agent) = await Resolve(id);
         if (agent.Text("agent_status") == "working" || agent.Text("pane_id").Length == 0) throw new InvalidOperationException("The agent moved on. Refresh and check its screen.");
         var screen = (await Call(machine, ["agent", "read", agent.Text("pane_id"), "--source", "visible"])).Replace('\u00a0', ' ').Replace("\r", "");
-        var lines = screen.Split('\n').Select(l => l.Trim(' ', '│', '┃', '❯')).ToList();
-        if ((question.Length > 0 && !lines.Contains(question)) || !lines.Any(l => l.StartsWith($"{number}. {label}", StringComparison.Ordinal))) throw new InvalidOperationException("This question is no longer on screen. Refresh and check the agent.");
+        // Only the live dialog at the bottom counts: the last copy of the question,
+        // near the end of the screen with no later question, followed by the exact
+        // option line and a menu cursor or key hint. Matching anywhere would let transcript text pass.
+        var raw = screen.Split('\n');
+        var lines = raw.Select(l => l.Trim(' ', '│', '┃', '❯')).ToList();
+        int start = question.Length == 0 ? -1 : lines.LastIndexOf(question);
+        if (start < 0 || lines.Count - start > 40 || !lines.Skip(start + 1).Contains($"{number}. {label}") || lines.Skip(start + 1).Any(l => l.EndsWith('?')) || !raw.Skip(start + 1).Any(l => System.Text.RegularExpressions.Regex.IsMatch(l, @"❯\s*\d{1,2}[.)]\s|Enter to select|Esc to cancel"))) throw new InvalidOperationException("This question is no longer on screen. Refresh and check the agent.");
         try { await Call(machine, ["agent", "send-keys", agent.Text("pane_id"), number.ToString()]); }
         catch { throw new InvalidOperationException("Answer uncertain. Check the agent in Herdr before answering again."); }
         return new JsonObject { ["ok"] = true, ["id"] = id };

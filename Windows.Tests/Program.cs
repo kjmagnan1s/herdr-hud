@@ -45,6 +45,10 @@ await Test("answers press the on-screen option once and refuse stale or busy dia
     await Refused(() => client.Answer(id, 1, "Do you want to delete it?", "Yes"), "no longer on screen");
     await Refused(() => client.Answer(id, 2, "Do you want to proceed?", "Yes"), "no longer on screen");
     await Refused(() => client.Answer(id, 0, "Do you want to proceed?", "Yes"), "can't be picked");
+    await Refused(() => client.Answer(id, 1, "", "Yes"), "no longer on screen");
+    fake.Screen = "Do you want to proceed?\n1. Yes\n2. No\n\nWhich file should I delete?\n❯ 1. Everything\n  2. Nothing\nEsc to cancel";
+    await Refused(() => client.Answer(id, 1, "Do you want to proceed?", "Yes"), "no longer on screen");
+    fake.Screen = "│ Do you want to proceed?   │\n│ ❯ 1. Yes                   │\n│   2. No                    │";
     fake.Status = "working"; await Refused(() => client.Answer(id, 1, "Do you want to proceed?", "Yes"), "moved on");
     fake.Status = "blocked"; fake.KeysFail = true; await Refused(() => client.Answer(id, 1, "Do you want to proceed?", "Yes"), "uncertain");
     Check(fake.Keys.Count == 2, "Answer retried or sent to a stale dialog");

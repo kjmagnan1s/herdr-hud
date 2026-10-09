@@ -85,8 +85,10 @@ final class TransportTests: XCTestCase {
         let id=(client.snapshot()["agents"] as! [Row])[0]["id"] as! String
         _=try client.answer(id,1,question:"Do you want to proceed?",label:"Yes")
         XCTAssertEqual(sent.count,1);XCTAssertEqual(Array(sent[0].suffix(3)),["send-keys","w1:p1","1"])
-        // A long option is matched by the start of its label.
-        _=try client.answer(id,2,question:"Do you want to proceed?",label:"Yes, and don't ask again for similar")
+        _=try client.answer(id,2,question:"Do you want to proceed?",label:"Yes, and don't ask again for similar commands in /Users/me/project")
+        XCTAssertEqual(sent.count,2)
+        // Only the whole option line counts, never a prefix of it.
+        XCTAssertThrowsError(try client.answer(id,2,question:"Do you want to proceed?",label:"Yes"))
         XCTAssertEqual(sent.count,2)
     }
     func testAnswerRefusesStaleOrBusyAndNeverRetries() throws {
@@ -96,6 +98,14 @@ final class TransportTests: XCTestCase {
         XCTAssertThrowsError(try stale.answer(id,1,question:"Do you want to delete it?",label:"Yes"))
         XCTAssertThrowsError(try stale.answer(id,2,question:"Do you want to proceed?",label:"Yes"))
         XCTAssertThrowsError(try stale.answer(id,0,question:"Do you want to proceed?",label:"Yes"))
+        XCTAssertThrowsError(try stale.answer(id,1,question:"",label:"Yes"))
+        // Transcript text that looks like a dialog doesn't count: the live
+        // dialog at the bottom asks something else.
+        let spoofed=answerClient(screen:"Do you want to proceed?\n1. Yes\n2. No\n\nWhich file should I delete?\n❯ 1. Everything\n  2. Nothing\nEsc to cancel"){_ in sends+=1}
+        XCTAssertThrowsError(try spoofed.answer((spoofed.snapshot()["agents"] as! [Row])[0]["id"] as! String,1,question:"Do you want to proceed?",label:"Yes"))
+        // A screen with the question and option but no live menu doesn't count.
+        let quoted=answerClient(screen:"Do you want to proceed?\n1. Yes\n2. No"){_ in sends+=1}
+        XCTAssertThrowsError(try quoted.answer((quoted.snapshot()["agents"] as! [Row])[0]["id"] as! String,1,question:"Do you want to proceed?",label:"Yes"))
         let busy=answerClient(screen:"Do you want to proceed?\n❯ 1. Yes",status:"working"){_ in sends+=1}
         XCTAssertThrowsError(try busy.answer((busy.snapshot()["agents"] as! [Row])[0]["id"] as! String,1,question:"Do you want to proceed?",label:"Yes"))
         XCTAssertEqual(sends,0)

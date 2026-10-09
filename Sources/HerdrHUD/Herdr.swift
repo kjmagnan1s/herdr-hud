@@ -196,8 +196,15 @@ final class HerdrClient {
         let (machine, row) = try resolve(id)
         guard (row["agent_status"] as? String) != "working", let pane = row["pane_id"] as? String else { throw HUDError("The agent moved on. Refresh and check its screen.") }
         let screen = try call(machine, ["agent", "read", pane, "--source", "visible"]).replacingOccurrences(of: "\u{00a0}", with: " ")
-        let lines = screen.components(separatedBy: "\n").map { $0.trimmingCharacters(in: CharacterSet(charactersIn: " │┃❯")) }
-        guard question.isEmpty || lines.contains(question), lines.contains(where: { $0.hasPrefix("\(number). \(label)") }) else { throw HUDError("This question is no longer on screen. Refresh and check the agent.") }
+        // Only the live dialog at the bottom counts: the last copy of the question,
+        // near the end of the screen with no later question, followed by the exact
+        // option line and a menu cursor or key hint. Matching anywhere would let transcript text pass.
+        let raw = screen.replacingOccurrences(of: "\r", with: "").components(separatedBy: "\n")
+        let lines = raw.map { $0.trimmingCharacters(in: CharacterSet(charactersIn: " │┃❯")) }
+        guard !question.isEmpty, let start = lines.lastIndex(of: question), lines.count - start <= 40,
+              lines[(start + 1)...].contains("\(number). \(label)"), !lines[(start + 1)...].contains(where: { $0.hasSuffix("?") }),
+              raw[(start + 1)...].contains(where: { $0.range(of: #"❯\s*\d{1,2}[.)]\s|Enter to select|Esc to cancel"#, options: .regularExpression) != nil })
+        else { throw HUDError("This question is no longer on screen. Refresh and check the agent.") }
         do { _ = try call(machine, ["agent", "send-keys", pane, String(number)]) }
         catch { throw HUDError("Answer uncertain. Check the agent in Herdr before answering again.") }
         return ["ok":true, "id":id]

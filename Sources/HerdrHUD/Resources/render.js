@@ -139,7 +139,7 @@
     for(const option of block.options||[]){
       const item=el('li',undefined,'dialog-option'+(option.selected?' selected':''));
       // "Type something" and "Chat about this" open a text box the HUD can't fill.
-      const pick=live&&option.n<=9&&!/^(Type something|Chat about this)/i.test(option.label);const row=pick?el('button',undefined,'dialog-answer'):item;
+      const pick=live&&!!block.question&&option.n<=9&&!/^(Type something|Chat about this)/i.test(option.label);const row=pick?el('button',undefined,'dialog-answer'):item;
       if(pick){row.type='button';Object.assign(row.dataset,{n:String(option.n),label:option.label,question:block.question||''});item.append(row);}
       row.append(el('span',String(option.n),'dialog-n'));
       const text=el('span',undefined,'dialog-label');text.append(el('span',option.label));
