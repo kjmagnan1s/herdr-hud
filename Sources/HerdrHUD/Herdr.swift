@@ -178,7 +178,29 @@ final class HerdrClient {
     // events keep that snapshot current. Prompts still re-check identity.
     func output(_ id: String) throws -> Row {
         guard let (machine, row) = bindings[id] else { throw HUDError("Agent is offline or changed. Refresh and select it again.") }
-        return ["id":id, "provider":row["agent"] ?? "", "text":try call(machine, ["agent", "read", row["pane_id"] as! String, "--source", "recent-unwrapped", "--lines", "180"])]
+        let pane = row["pane_id"] as! String
+        let text: String
+        do { text = try call(machine, ["agent", "read", pane, "--source", "recent-unwrapped", "--lines", "180"]) }
+        // Herdr can't scroll a blocked agent's history, so show its visible screen,
+        // which holds the question it is waiting on.
+        catch let error as HUDError where error.message.contains("agent_not_idle") { text = try call(machine, ["agent", "read", pane, "--source", "visible"]) }
+        return ["id":id, "provider":row["agent"] ?? "", "text":text]
+    }
+    // Picks one numbered option in a permission prompt or question by pressing
+    // its number key once. The agent is re-checked and its visible screen must
+    // still show the same question and option, so a stale card never answers a
+    // newer dialog. Herdr can report an open question as idle, so the screen is
+    // the proof, not the status. Never retried.
+    func answer(_ id: String, _ number: Int, question: String, label: String) throws -> Row {
+        guard (1...9).contains(number), !label.isEmpty, label.utf8.count <= 2000, question.utf8.count <= 2000 else { throw HUDError("That option can't be picked from the HUD. Answer in Herdr.") }
+        let (machine, row) = try resolve(id)
+        guard (row["agent_status"] as? String) != "working", let pane = row["pane_id"] as? String else { throw HUDError("The agent moved on. Refresh and check its screen.") }
+        let screen = try call(machine, ["agent", "read", pane, "--source", "visible"]).replacingOccurrences(of: "\u{00a0}", with: " ")
+        let lines = screen.components(separatedBy: "\n").map { $0.trimmingCharacters(in: CharacterSet(charactersIn: " │┃❯")) }
+        guard question.isEmpty || lines.contains(question), lines.contains(where: { $0.hasPrefix("\(number). \(label)") }) else { throw HUDError("This question is no longer on screen. Refresh and check the agent.") }
+        do { _ = try call(machine, ["agent", "send-keys", pane, String(number)]) }
+        catch { throw HUDError("Answer uncertain. Check the agent in Herdr before answering again.") }
+        return ["ok":true, "id":id]
     }
     func prompt(_ id: String, _ message: String) throws -> Row {
         guard !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, message.utf8.count <= 60000, !message.contains("\0"), !message.hasPrefix("-") else { throw HUDError("Enter a prompt under 60 KB that does not start with a dash.") }

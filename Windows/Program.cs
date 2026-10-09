@@ -367,6 +367,13 @@ sealed class HUDContext : ApplicationContext
                 try { result = await Serialized(op == "output" ? reads : sends, () => current != client ? throw new InvalidOperationException("Herdr source changed. Refresh and select an agent.") : op == "output" ? current.Output(id) : current.Prompt(id, data.Text("message"))); }
                 catch (Exception e) { result = new() { ["id"] = id, ["error"] = e.Message }; }
                 result["requestID"] = requestID; Emit(op, result); break;
+            case "answer":
+                if (id.Length == 0 || requestID.Length == 0 || requestID.Length > 100 || !panel.Visible || !promptIDs.Add(requestID)) break;
+                if (data["n"] is not JsonValue n || !n.TryGetValue<int>(out var number)) number = 0;
+                var answerClient = client; JsonObject answer;
+                try { answer = await Serialized(sends, () => answerClient != client ? throw new InvalidOperationException("Herdr source changed. Refresh and select an agent.") : answerClient.Answer(id, number, data.Text("question"), data.Text("label"))); }
+                catch (Exception e) { answer = new() { ["id"] = id, ["error"] = e.Message }; }
+                answer["requestID"] = requestID; Emit("answer", answer); break;
         }
     }
     void BuildMenu()

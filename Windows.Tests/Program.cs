@@ -39,6 +39,16 @@ await Test("reads use the snapshot binding without listing agents again", async 
     var fake = new Fake(); var client = fake.Client(); var id = await fake.ID(client); int before = fake.Lists;
     Check((await client.Output(id))["text"]!.GetValue<string>() == "• Fixture output" && fake.Lists == before, "Read listed agents again");
 });
+await Test("answers press the on-screen option once and refuse stale or busy dialogs", async () => {
+    var fake = new Fake { Status = "blocked", Screen = "│ Do you want to proceed?   │\n│ ❯ 1. Yes                   │\n│   2. No                    │" }; var client = fake.Client(); var id = await fake.ID(client);
+    await client.Answer(id, 1, "Do you want to proceed?", "Yes"); Check(fake.Keys.Count == 1 && fake.Keys[0][^2] == "p1" && fake.Keys[0][^1] == "1", "Answer not sent once");
+    await Refused(() => client.Answer(id, 1, "Do you want to delete it?", "Yes"), "no longer on screen");
+    await Refused(() => client.Answer(id, 2, "Do you want to proceed?", "Yes"), "no longer on screen");
+    await Refused(() => client.Answer(id, 0, "Do you want to proceed?", "Yes"), "can't be picked");
+    fake.Status = "working"; await Refused(() => client.Answer(id, 1, "Do you want to proceed?", "Yes"), "moved on");
+    fake.Status = "blocked"; fake.KeysFail = true; await Refused(() => client.Answer(id, 1, "Do you want to proceed?", "Yes"), "uncertain");
+    Check(fake.Keys.Count == 2, "Answer retried or sent to a stale dialog");
+});
 await Test("an offline machine backs off and the others keep updating", async () => {
     var fake = new Fake { Remote = true }; var client = fake.Client(); await client.Snapshot(); fake.RemoteOffline = true;
     var first = await client.Snapshot(); int attempts = fake.RemoteCalls;
@@ -166,7 +176,9 @@ Console.WriteLine($"{passed} tests passed.");
 sealed class Fake
 {
     public string Status = "idle", Terminal = "t1", Workspace = "w1", Conversation = "c1", Target="remote-host";
-    public bool Offline, BadAck, Remote, RemoteOffline;
+    public bool Offline, BadAck, Remote, RemoteOffline, KeysFail;
+    public string Screen = "";
+    public List<string[]> Keys = new();
     public int Sends, Lists, RemoteCalls;
     public Invocation? Last;
     public static JsonObject Agent(string status,string terminal,string workspace,string conversation) => new() { ["pane_id"]="p1", ["terminal_id"]=terminal,["workspace_id"]=workspace,["tab_id"]="tab1",["agent_session"]=conversation,["agent"]="codex",["agent_status"]=status };
@@ -183,7 +195,8 @@ sealed class Fake
         if(invocation.Mutation){Sends++;return Task.FromResult(BadAck?"broken ack":"{\"result\":{\"type\":\"agent_prompted\",\"agent\":{\"terminal_id\":\"t1\"}}}");}
         if(text.Contains("workspace"))return Task.FromResult("{\"result\":{\"workspaces\":[]}}");
         if(text.Contains("tab"))return Task.FromResult("{\"result\":{\"tabs\":[]}}");
-        if(text.Contains("read"))return Task.FromResult("• Fixture output");
+        if(args.Contains("send-keys")){Keys.Add(args.ToArray());if(KeysFail)throw new InvalidOperationException("keys fixture");return Task.FromResult("");}
+        if(text.Contains("read"))return Task.FromResult(args.Contains("visible")?Screen:"• Fixture output");
         Lists++;
         return Task.FromResult(new JsonObject{["result"]=new JsonObject{["agents"]=new JsonArray(Agent(Status,Terminal,Workspace,Conversation))}}.ToJsonString());
     }

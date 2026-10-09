@@ -183,7 +183,29 @@ public sealed class HerdrClient
     {
         if (!bindings.TryGetValue(id, out var binding)) throw new InvalidOperationException("Agent is offline or changed. Refresh and select it again.");
         var (machine, agent) = binding;
-        return new JsonObject { ["id"] = id, ["provider"] = agent.Text("agent"), ["text"] = await Call(machine, ["agent", "read", agent.Text("pane_id"), "--source", "recent-unwrapped", "--lines", "180"]) };
+        string text;
+        try { text = await Call(machine, ["agent", "read", agent.Text("pane_id"), "--source", "recent-unwrapped", "--lines", "180"]); }
+        // Herdr can't scroll a blocked agent's history, so show its visible screen,
+        // which holds the question it is waiting on.
+        catch (InvalidOperationException error) when (error.Message.Contains("agent_not_idle")) { text = await Call(machine, ["agent", "read", agent.Text("pane_id"), "--source", "visible"]); }
+        return new JsonObject { ["id"] = id, ["provider"] = agent.Text("agent"), ["text"] = text };
+    }
+    // Picks one numbered option in a permission prompt or question by pressing
+    // its number key once. The agent is re-checked and its visible screen must
+    // still show the same question and option, so a stale card never answers a
+    // newer dialog. Herdr can report an open question as idle, so the screen is
+    // the proof, not the status. Never retried.
+    public async Task<JsonObject> Answer(string id, int number, string question, string label)
+    {
+        if (number is < 1 or > 9 || label.Length == 0 || Encoding.UTF8.GetByteCount(label) > 2000 || Encoding.UTF8.GetByteCount(question) > 2000) throw new InvalidOperationException("That option can't be picked from the HUD. Answer in Herdr.");
+        var (machine, agent) = await Resolve(id);
+        if (agent.Text("agent_status") == "working" || agent.Text("pane_id").Length == 0) throw new InvalidOperationException("The agent moved on. Refresh and check its screen.");
+        var screen = (await Call(machine, ["agent", "read", agent.Text("pane_id"), "--source", "visible"])).Replace('\u00a0', ' ').Replace("\r", "");
+        var lines = screen.Split('\n').Select(l => l.Trim(' ', '│', '┃', '❯')).ToList();
+        if ((question.Length > 0 && !lines.Contains(question)) || !lines.Any(l => l.StartsWith($"{number}. {label}", StringComparison.Ordinal))) throw new InvalidOperationException("This question is no longer on screen. Refresh and check the agent.");
+        try { await Call(machine, ["agent", "send-keys", agent.Text("pane_id"), number.ToString()]); }
+        catch { throw new InvalidOperationException("Answer uncertain. Check the agent in Herdr before answering again."); }
+        return new JsonObject { ["ok"] = true, ["id"] = id };
     }
     public async Task<JsonObject> Prompt(string id, string message)
     {

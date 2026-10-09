@@ -3,7 +3,7 @@ const $=id=>document.getElementById(id);
 const post=data=>window.webkit?.messageHandlers?.hud ? window.webkit.messageHandlers.hud.postMessage(data) : window.chrome.webview.postMessage(data);
 if(window.chrome?.webview)window.chrome.webview.addEventListener('message',event=>window.receive(event.data));
 let agents=[],selected='',opened=false,mode='chat',filter='',reading=false,sending=false,requestSequence=0,lastOutput='',lastRendered='',selectionEpoch=0;
-let baseline=false,unread=new Set(),drafts=new Map(),outputs=new Map(),since=new Map(),uncertain=new Set(),promptByRequest=new Map();
+let answering=false,baseline=false,unread=new Set(),drafts=new Map(),outputs=new Map(),since=new Map(),uncertain=new Set(),promptByRequest=new Map();
 let names=new Map(),parsed=new Map(),failed=new Set(),wantSelected=false,alerted=new Map(),changedAt=new Map();
 const chatProviders=new Set(['codex','claude']);
 if(window.webkit?.messageHandlers?.hud)document.documentElement?.classList.add('glass'); // macOS draws a native blur behind the page.
@@ -73,7 +73,7 @@ function renderHeader(){
   if(busy&&!since.has(a.id))since.set(a.id,Date.now());
   $('send').disabled=!a?.online||!['idle','done'].includes(state)||sending||uncertain.has(selected)||!$('prompt').value.trim();
   $('prompt').disabled=!a;$('chat').disabled=!chatProviders.has(a?.agent);
-  $('send-status').textContent=sending?'Sending once…':uncertain.has(selected)?'Delivery uncertain. Inspect this agent in Herdr before sending again.':!a?'Choose an agent to get started.':!a.online?'Machine offline. Your draft is retained.':state==='blocked'?'Needs your input in Herdr. Native approvals remain in its terminal.':busy?'Agent is working. You can draft the next prompt here.':['idle','done'].includes(state)?'Ready for your next prompt.':'Agent state is unknown. Sending is disabled.';
+  $('send-status').textContent=sending?'Sending once…':uncertain.has(selected)?'Delivery uncertain. Inspect this agent in Herdr before sending again.':!a?'Choose an agent to get started.':!a.online?'Machine offline. Your draft is retained.':state==='blocked'?'Needs your input. Pick an option above, or answer in Herdr.':busy?'Agent is working. You can draft the next prompt here.':['idle','done'].includes(state)?'Ready for your next prompt.':'Agent state is unknown. Sending is disabled.';
   $('reconcile').hidden=!uncertain.has(selected);
 }
 function inline(text,parent){HUDRender.inline(text,parent);} // No terminal text is ever interpreted as HTML.
@@ -116,6 +116,12 @@ function read(){if(!opened||reading||!active()?.online)return;reading=true;wantS
 // a time, so switching to them shows their conversation immediately.
 // Only agents likely to be opened next: needing input, unread, working or done.
 function prefetch(){if(!opened||reading)return;const next=agents.find(a=>a.online&&a.id!==selected&&!outputs.has(a.id)&&!failed.has(a.id)&&(status(a)==='blocked'||unread.has(a.id)||['working','done'].includes(a.agent_status)));if(!next)return;reading=true;request('output',{id:next.id});}
+// Clicking an option in a live permission prompt or question answers it once.
+$('output').onclick=event=>{
+  const pick=event.target.closest?.('.dialog-answer');if(!pick||answering||!active()?.online)return;
+  answering=true;notice('');for(const b of $('output').querySelectorAll('.dialog-answer'))b.disabled=true;pick.classList.add('picked');
+  request('answer',{id:selected,n:Number(pick.dataset.n),label:pick.dataset.label,question:pick.dataset.question});
+};
 function send(){if($('send').disabled)return;const id=selected,message=$('prompt').value;sending=true;notice('');const requestID=request('prompt',{id,message});promptByRequest.set(requestID,{id,message});renderHeader();}
 window.receive=({type,data})=>{
   if(type==='roster'){
@@ -143,6 +149,9 @@ window.receive=({type,data})=>{
     const pending=promptByRequest.get(data.requestID);if(!pending)return;promptByRequest.delete(data.requestID);sending=false;
     if(data.error){notice(data.error);if(/uncertain/i.test(data.error))uncertain.add(pending.id);}
     else{if(selected===pending.id&&$('prompt').value===pending.message)$('prompt').value='';if(drafts.get(pending.id)===pending.message)drafts.delete(pending.id);notice('Prompt sent.');request('refresh');}renderHeader();
+  }else if(type==='answer'){
+    answering=false;if(data.error)notice(data.error);else notice('Answer sent.');
+    if(data.id===selected){lastRendered='';renderOutput();wantSelected=true;read();}
   }else if(type==='preferences'){if(data.selectedAgent&&!selected)selected=data.selectedAgent;if(data.rosterWidth>=56)document.querySelector('aside').style.width=data.rosterWidth+'px';mode=data.mode||'chat';}
   else if(type==='notice'){notice(data.message);}
 };

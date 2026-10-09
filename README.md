@@ -167,7 +167,12 @@ inspects Herdr and explicitly reconciles it.
 
 Chat is a conservative formatting of recent captured Codex terminal output,
 not full structured conversation history. Other agents retain Terminal view.
-Native approvals/questions must still be answered in Herdr.
+A live approval or question shows its options as buttons. Clicking one re-checks
+the agent, confirms the same question and option are still on its visible
+screen, then presses that number key once with `herdr agent send-keys`. It is
+never retried. Free-text options ("Type something", "Chat about this") are
+answered in Herdr. When an agent is blocked, Herdr can't scroll its history, so
+the HUD shows the visible screen instead.
 
 ## Prompt privacy and output limits
 

@@ -53,6 +53,56 @@ final class TransportTests: XCTestCase {
         current=row(session:"replacement");XCTAssertThrowsError(try client.prompt(id,"hello"));XCTAssertFalse(sent)
         _=client.snapshot();XCTAssertThrowsError(try client.output(id))
     }
+    func testBlockedReadFallsBackToVisible() throws {
+        var reads:[[String]]=[]
+        let client=HerdrClient(binary:"/test/herdr",execute:{ call in
+            if call.arguments.contains("machine") { return "[]" }
+            if call.arguments.contains("read") {
+                reads.append(call.arguments)
+                if call.arguments.contains("recent-unwrapped") { throw HUDError("{\"error\":{\"code\":\"agent_not_idle\"}}") }
+                return "Allow this command?"
+            }
+            let group=call.arguments[2]
+            return encode(["result":[["agent":"agents","workspace":"workspaces","tab":"tabs"][group]!: group == "agent" ? [self.row("blocked")] : []]])
+        })
+        let id=(client.snapshot()["agents"] as! [Row])[0]["id"] as! String
+        XCTAssertEqual(try client.output(id)["text"] as? String,"Allow this command?")
+        XCTAssertEqual(reads.count,2);XCTAssertTrue(reads[1].contains("visible"))
+    }
+    func answerClient(screen: String, status: String = "blocked", keys: @escaping ([String]) throws -> Void) -> HerdrClient {
+        HerdrClient(binary:"/test/herdr",execute:{ call in
+            if call.arguments.contains("machine") { return "[]" }
+            if call.arguments.contains("send-keys") { try keys(call.arguments); return "" }
+            if call.arguments.contains("read") { return screen }
+            let group=call.arguments[2]
+            return encode(["result":[["agent":"agents","workspace":"workspaces","tab":"tabs"][group]!: group == "agent" ? [self.row(status)] : []]])
+        })
+    }
+    func testAnswerPressesTheOptionOnce() throws {
+        let screen=try String(contentsOf:URL(fileURLWithPath:#filePath).deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("fixtures/claude-permission.txt"),encoding:.utf8)
+        var sent:[[String]]=[]
+        let client=answerClient(screen:screen){sent.append($0)}
+        let id=(client.snapshot()["agents"] as! [Row])[0]["id"] as! String
+        _=try client.answer(id,1,question:"Do you want to proceed?",label:"Yes")
+        XCTAssertEqual(sent.count,1);XCTAssertEqual(Array(sent[0].suffix(3)),["send-keys","w1:p1","1"])
+        // A long option is matched by the start of its label.
+        _=try client.answer(id,2,question:"Do you want to proceed?",label:"Yes, and don't ask again for similar")
+        XCTAssertEqual(sent.count,2)
+    }
+    func testAnswerRefusesStaleOrBusyAndNeverRetries() throws {
+        var sends=0
+        let stale=answerClient(screen:"Do you want to proceed?\n❯ 1. Yes\n  2. No"){_ in sends+=1}
+        let id=(stale.snapshot()["agents"] as! [Row])[0]["id"] as! String
+        XCTAssertThrowsError(try stale.answer(id,1,question:"Do you want to delete it?",label:"Yes"))
+        XCTAssertThrowsError(try stale.answer(id,2,question:"Do you want to proceed?",label:"Yes"))
+        XCTAssertThrowsError(try stale.answer(id,0,question:"Do you want to proceed?",label:"Yes"))
+        let busy=answerClient(screen:"Do you want to proceed?\n❯ 1. Yes",status:"working"){_ in sends+=1}
+        XCTAssertThrowsError(try busy.answer((busy.snapshot()["agents"] as! [Row])[0]["id"] as! String,1,question:"Do you want to proceed?",label:"Yes"))
+        XCTAssertEqual(sends,0)
+        let failing=answerClient(screen:"Do you want to proceed?\n❯ 1. Yes"){_ in sends+=1;throw HUDError("lost")}
+        XCTAssertThrowsError(try failing.answer((failing.snapshot()["agents"] as! [Row])[0]["id"] as! String,1,question:"Do you want to proceed?",label:"Yes"))
+        XCTAssertEqual(sends,1)
+    }
     func testUnknownOutcomeNeverRetries() throws {
         var sends=0;let client=clientWith({self.row()},sends:{_ in sends+=1;throw HUDError("Delivery uncertain")});let id=(client.snapshot()["agents"] as! [Row])[0]["id"] as! String
         XCTAssertThrowsError(try client.prompt(id,"hello"));XCTAssertEqual(sends,1)

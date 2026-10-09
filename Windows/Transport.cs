@@ -94,8 +94,11 @@ public sealed class ProcessRunner
         async Task Write(){try{if(invocation.Input is not null)await child.Input.WriteAsync(invocation.Input,cancel.Token);child.Input.Close();}catch{cancel.Cancel();throw;}}
         var output=Read(child.Output,StdoutLimit);var errors=Read(child.Error,StderrLimit);var input=Write();
         var all=Task.WhenAll(output,errors,input,child.Process.WaitForExitAsync(cancel.Token));
-        try {await all.WaitAsync(cancel.Token);if(child.Process.ExitCode!=0)throw new InvalidOperationException("Herdr command failed.");return Encoding.UTF8.GetString(await output);}
+        try {await all.WaitAsync(cancel.Token);}
         catch {child.Stop();try{await all.WaitAsync(TimeSpan.FromSeconds(2));}catch{}throw new InvalidOperationException(invocation.Mutation?"Delivery uncertain or refused. Inspect Herdr before sending again.":"Herdr command timed out, failed, or exceeded its output limit.");}
+        // Like the Mac runner, a failed read carries Herdr's own error text.
+        if(child.Process.ExitCode!=0)throw new InvalidOperationException(invocation.Mutation?"Delivery uncertain or refused. Inspect Herdr before sending again.":Encoding.UTF8.GetString((await errors).AsSpan(0,Math.Min((await errors).Length,700))));
+        return Encoding.UTF8.GetString(await output);
     }
 }
 

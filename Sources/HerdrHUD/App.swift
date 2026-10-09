@@ -328,6 +328,17 @@ final class HUDApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKN
                 let value = result
                 DispatchQueue.main.async { if operation == "output" { self.readBusy = false }; self.emit(operation,value) }
             }
+        case "answer":
+            guard let id = data["id"] as? String, let number = data["n"] as? Int, !requestID.isEmpty, panelOpen, !promptIDs.contains(requestID) else { return }
+            promptIDs.insert(requestID)
+            sends.async {
+                var result: Row
+                do { result = try self.client.answer(id,number,question:data["question"] as? String ?? "",label:data["label"] as? String ?? "") }
+                catch { result = ["error":error.localizedDescription, "id":id] }
+                result["requestID"] = requestID
+                let value = result
+                DispatchQueue.main.async { self.emit("answer",value) }
+            }
         default: break
         }
     }

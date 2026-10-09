@@ -161,6 +161,8 @@ new task? /clear to save 410.4k tokens` + footer,
         emit('output', { id: message.id, requestID: message.requestID, provider: a.agent, text: transcripts[a.pane_id] });
       } else if (message.op === 'prompt') {
         emit('prompt', { requestID: message.requestID, error: 'Mockup only. Nothing was sent.' });
+      } else if (message.op === 'answer') {
+        emit('answer', { id: message.id, requestID: message.requestID, error: `Mockup only. Option ${message.n} was not sent.` });
       } else if (message.op === 'refresh') {
         emit('roster', { agents, machines: [{ ...machine, count: agents.length }] });
       }
