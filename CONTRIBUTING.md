@@ -9,6 +9,9 @@ alerts, and visibility controls.
   exact files at build time; do not maintain a second UI copy.
 - `Windows/`: WinForms, WebView2, native desktop integration and CLI/SSH transport.
 - `Tests/`, `Windows.Tests/`: model and transport checks.
+- `docs/mockup/`: the real panel with placeholder agents and a fake bridge.
+  Open `docs/mockup/index.html` in a browser to restyle the UI without running
+  the app or touching any agent.
 
 Run `swift test` for Mac changes, `node --test Tests/*.test.cjs` for interface
 changes, and `dotnet run --project Windows.Tests/HerdrHUD.Tests.csproj -c Release`

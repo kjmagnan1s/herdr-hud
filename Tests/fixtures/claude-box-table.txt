@@ -1,0 +1,14 @@
+⏺ Here is how the three projects compare:
+
+  ┌───────────────┬──────────────────────────────┬──────────────────────────┐
+  │ Project       │ What happened                │ Outcome                  │
+  ├───────────────┼──────────────────────────────┼──────────────────────────┤
+  │ Mountain Gate │ stopped one phase into its   │ ran to schedule; next    │
+  │               │ plan                         │ cycle 2030               │
+  ├───────────────┼──────────────────────────────┼──────────────────────────┤
+  │ River Walk    │ finished early               │ under budget             │
+  ├───────────────┼──────────────────────────────┼──────────────────────────┤
+  │ `harbor.js`   │ **paused** for review        │ pending                  │
+  └───────────────┴──────────────────────────────┴──────────────────────────┘
+
+  Mountain Gate is the outlier.

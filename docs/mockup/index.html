@@ -1,0 +1,22 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Herdr HUD mockup</title>
+<!-- Static preview of the real panel with placeholder agents. Nothing here talks
+     to Herdr or to any agent; a fake bridge answers the panel's requests. -->
+<link rel="stylesheet" href="../../Sources/HerdrHUD/Resources/style.css">
+<link rel="stylesheet" href="mockup.css">
+</head><body class="mockup">
+<div class="game" aria-hidden="true"><div class="sun"></div><div class="hills"></div><div class="hills near"></div><div class="unitframe"><b>Thrall</b><i></i><i class="mana"></i></div><div class="actionbar"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div></div>
+<div class="controls"><label><input type="checkbox" id="glass" checked> Glass (macOS)</label><label><input type="checkbox" id="game" checked> Game backdrop</label></div>
+<div class="frame">
+<header><div class="brand" aria-hidden="true">H</div><strong>Herdr HUD</strong><div id="machines" aria-label="Machine connections">Connecting to Herdr…</div><div class="spacer"></div><button id="refresh" class="icon" title="Refresh agents" aria-label="Refresh agents">↻</button><button id="hide" class="quiet">Hide HUD</button><button id="close" class="icon" aria-label="Close agent panel">×</button></header>
+<div id="notice" role="status" hidden></div>
+<main><aside><div class="roster-heading"><span>Agents</span><span id="count">0</span></div><input id="search" type="search" placeholder="Find an agent…" aria-label="Find an agent"><div id="roster"></div></aside><div id="divider" role="separator" aria-label="Resize agent roster" tabindex="0"></div>
+<section class="conversation"><div class="conversation-header"><div class="conversation-title"><strong id="title">Your agents will appear here</strong><div id="identity" class="subtitle"></div></div><div class="spacer"></div><div class="switch"><button id="chat" aria-pressed="true">Chat</button><button id="terminal" aria-pressed="false">Terminal</button></div></div><div id="working" hidden><span class="spinner"></span><span id="work-text">Working…</span></div><div id="output" tabindex="0" aria-label="Agent output"></div>
+<div id="composer"><div id="send-status" role="status"></div><textarea id="prompt" placeholder="Tell your agent what’s next…" aria-label="Prompt to selected agent" rows="3"></textarea><div class="composer-actions"><span id="hint">Enter to send · Ctrl/Shift Enter for a new line</span><button id="send" disabled>Send prompt <span>↗</span></button></div><button id="reconcile" hidden>I checked Herdr. Allow another send</button></div></section></main>
+</div>
+<script src="fixtures.js"></script>
+<script src="../../Sources/HerdrHUD/Resources/model.js"></script>
+<script src="../../Sources/HerdrHUD/Resources/render.js"></script>
+<script src="../../Sources/HerdrHUD/Resources/app.js"></script>
+<script src="mockup.js"></script>
+</body></html>

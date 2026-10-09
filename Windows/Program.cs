@@ -274,7 +274,7 @@ sealed class HUDContext : ApplicationContext
             case "refresh": await Refresh(); break;
             case "preferences":
                 if (data["selectedAgent"] is JsonValue && data.Text("selectedAgent").Length <= 8192) prefs.SelectedAgent = data.Text("selectedAgent");
-                if (data["rosterWidth"] is JsonValue value && value.TryGetValue<double>(out var width) && width is >=155 and <=600) prefs.RosterWidth = width;
+                if (data["rosterWidth"] is JsonValue value && value.TryGetValue<double>(out var width) && width is >=56 and <=600) prefs.RosterWidth = width;
                 if (data.Text("mode") is "chat" or "terminal") prefs.Mode = data.Text("mode"); prefs.Save(); break;
             case "badge": bubble.SetBadgeCount(data["count"]?.GetValue<int>() ?? 0); break;
             case "alertPreview":

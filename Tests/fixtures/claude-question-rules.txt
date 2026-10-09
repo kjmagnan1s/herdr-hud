@@ -1,0 +1,19 @@
+⏺ Which palette do you want for the roster badges?
+
+────────────────────────────────────────────────────────────────────────
+ ☐ Palette
+
+Which palette should the badges use?
+
+  1. Warm
+     Gold, amber and red
+  2. Cool
+     Blue, teal and violet
+  3. High contrast
+     Pure colors for bright game scenes
+❯ 4. Type something.
+────────────────────────────────────────────────────────────────────────
+  5. Chat about this
+
+Enter to select · ↑/↓ to navigate · Esc to cancel
+────────────────────────────────────────────────────────────────────────

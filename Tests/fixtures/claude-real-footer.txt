@@ -1,0 +1,14 @@
+  Next: Do your cleanup on the Mac mini and push it, then tell me "cleanup done."
+
+● Ran 4 stop hooks
+  ⎿  Stop hook error: Failed with non-blocking status code: /bin/sh: node: command not found
+
+✻ Baked for 7s · done 3:27 PM
+
+✔ Update installed · Restart to update
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Opus 5.5 (1M context) | 📁Documents | ▄░░░░░░░░ 6% of 1000k tokens
+  💬 actually I need to do some cleanup on these folders and the mac...

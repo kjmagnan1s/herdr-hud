@@ -1,0 +1,19 @@
+❯ clean the build folder
+
+⏺ I'll remove the stale build output.
+
+⏺ Bash(rm -rf build/)
+
+╭───────────────────────────────────────────────────────────────────────╮
+│ Bash command                                                          │
+│                                                                       │
+│   rm -rf build/                                                       │
+│   Remove stale build output                                           │
+│                                                                       │
+│ Do you want to proceed?                                               │
+│ ❯ 1. Yes                                                              │
+│   2. Yes, and don't ask again for similar commands in /Users/me/project│
+│   3. No, and tell Claude what to do differently (esc)                 │
+╰───────────────────────────────────────────────────────────────────────╯
+  Opus 5.5 | 📁project | ███░░░░░ 31% of 1000k tokens
+  ⏵⏵ accept edits on (shift+tab to cycle)

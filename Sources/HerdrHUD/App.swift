@@ -36,7 +36,10 @@ final class BubbleView: NSView {
     override func rightMouseDown(with event: NSEvent) { if let menu = app?.status.menu { NSMenu.popUpContextMenu(menu,with:event,for:self) } }
 }
 final class HUDApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavigationDelegate {
+    // Output reads get their own queue so opening an agent never waits behind
+    // the roster poll. Prompts stay on the serial transport queue.
     let client = HerdrClient(), work = DispatchQueue(label:"herdr-hud.transport",qos:.userInitiated)
+    let reads = DispatchQueue(label:"herdr-hud.reads",qos:.userInitiated)
     let defaults = UserDefaults.standard
     var bubble: NSPanel!, panel: OverlayPanel!, bubbleView: BubbleView!, web: WKWebView!, status: NSStatusItem!
     var timer: Timer?, hotkeys: [EventHotKeyRef] = [], handler: EventHandlerRef?
@@ -59,7 +62,17 @@ final class HUDApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKN
         web = WKWebView(frame:panel.contentView!.bounds,configuration:config)
         web.autoresizingMask = [.width,.height]; web.navigationDelegate = self
         web.setValue(false,forKey:"drawsBackground")
-        panel.contentView = web
+        // Native blur behind the transparent page; the CSS only tints it.
+        let glass = NSVisualEffectView(frame:panel.contentView!.bounds)
+        glass.material = .hudWindow; glass.blendingMode = .behindWindow; glass.state = .active
+        glass.appearance = NSAppearance(named:.darkAqua); glass.autoresizingMask = [.width,.height]
+        let radius: CGFloat = 16, mask = NSImage(size:NSSize(width:radius*2+1,height:radius*2+1),flipped:false) { rect in
+            NSColor.black.setFill(); NSBezierPath(roundedRect:rect,xRadius:radius,yRadius:radius).fill(); return true
+        }
+        mask.capInsets = NSEdgeInsets(top:radius,left:radius,bottom:radius,right:radius); mask.resizingMode = .stretch
+        glass.maskImage = mask
+        web.frame = glass.bounds; glass.addSubview(web)
+        panel.contentView = glass
         web.loadFileURL(HUDResources.root.appendingPathComponent("index.html"),allowingReadAccessTo:HUDResources.root)
         bubble = NSPanel(contentRect:NSRect(x:32,y:180,width:64,height:64),styleMask:[.borderless,.nonactivatingPanel],backing:.buffered,defer:false)
         configure(bubble); bubble.title = "Herdr HUD H Button"; bubble.level = NSWindow.Level(rawValue:panel.level.rawValue+1)
@@ -194,12 +207,12 @@ final class HUDApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKN
         case "refresh": refresh()
         case "preferences":
             if let id = data["selectedAgent"] as? String, id.utf8.count <= 8192 { defaults.set(id,forKey:"selectedAgent") }
-            if let width = data["rosterWidth"] as? Double, width >= 155 && width <= 600 { defaults.set(width,forKey:"rosterWidth") }
+            if let width = data["rosterWidth"] as? Double, width >= 56 && width <= 600 { defaults.set(width,forKey:"rosterWidth") }
             if let mode = data["mode"] as? String, ["chat","terminal"].contains(mode) { defaults.set(mode,forKey:"viewMode") }
         case "badge": bubbleView.count = data["count"] as? Int ?? 0
         case "alertPreview":
             if !panelOpen && visible, let id = data["id"] as? String {
-                work.async {
+                reads.async {
                     let output = (try? self.client.output(id)) ?? ["id":id,"text":"","provider":""]
                     DispatchQueue.main.async { self.emit("alertPreview",output.merging(["title":data["title"] ?? "Agent update"],uniquingKeysWith:{_,b in b})) }
                 }
@@ -209,7 +222,7 @@ final class HUDApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKN
             guard let id = data["id"] as? String, !requestID.isEmpty, panelOpen else { return }
             if operation == "output" { if readBusy { return }; readBusy = true; selected = id }
             if operation == "prompt" { guard !promptIDs.contains(requestID) else { return }; promptIDs.insert(requestID) }
-            work.async {
+            (operation == "output" ? reads : work).async {
                 var result: Row
                 do { result = operation == "output" ? try self.client.output(id) : try self.client.prompt(id,data["message"] as? String ?? "") }
                 catch { result = ["error":error.localizedDescription, "id":id] }
