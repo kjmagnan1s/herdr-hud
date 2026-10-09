@@ -26,9 +26,8 @@ struct Invocation {
 final class HerdrClient {
     let execute: (Invocation) throws -> String
     let binary: String
-    var cache: [String: [Row]] = [:]
-    // Snapshots write bindings on the transport queue while output reads use
-    // their own queue, so access goes through a lock.
+    // Snapshots write bindings on the transport queue while reads and sends use
+    // their own queues, so access goes through a lock.
     private let bindingLock = NSLock()
     private var boundAgents: [String: (Machine, Row)] = [:]
     var bindings: [String: (Machine, Row)] {
@@ -56,6 +55,22 @@ final class HerdrClient {
         }
         return Invocation(executable: binary, arguments: (binary == "/usr/bin/env" ? ["herdr"] : []) + scoped, mutation: mutation, input:input, localPrompt:mutation)
     }
+    // Python that is really installed. The /usr/bin/python3 stub would pop a
+    // Command Line Tools install dialog over the game, so it is never used.
+    static let localPython = ["/opt/homebrew/bin/python3", "/usr/local/bin/python3", "/Library/Developer/CommandLineTools/usr/bin/python3", "/Applications/Xcode.app/Contents/Developer/usr/bin/python3"].first(where: { FileManager.default.isExecutableFile(atPath: $0) })
+    /// The read-only event bridge for one machine, or nil when it cannot run
+    /// there (no usable Python on this Mac); that machine is then polled.
+    func watchInvocation(_ machine: Machine, python: String? = HerdrClient.localPython) throws -> Invocation? {
+        let script = try String(contentsOf: HUDResources.root.appendingPathComponent("watch.py"), encoding: .utf8)
+        let input = Data((encode(["session": machine.session]) + "\n").utf8)
+        if let target = machine.target {
+            guard !target.isEmpty, !target.hasPrefix("-"), !target.contains(where: { $0.isWhitespace || $0.isNewline }), !target.contains("\0") else { throw HUDError("Invalid saved SSH target.") }
+            // Keepalives detect a dead link in about 30 seconds instead of minutes.
+            return Invocation(executable: "/usr/bin/ssh", arguments: ["-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "-o", "StrictHostKeyChecking=yes", "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=2", target, ["python3", "-c", script].map(shellQuote).joined(separator: " ")], mutation: false, input: input)
+        }
+        guard let python = python else { return nil }
+        return Invocation(executable: python, arguments: ["-c", script], mutation: false, input: input)
+    }
     func call(_ machine: Machine, _ args: [String], mutation: Bool = false) throws -> String {
         try execute(invocation(machine, args, mutation: mutation))
     }
@@ -81,50 +96,118 @@ final class HerdrClient {
     static func key(_ machine: Machine, _ row: Row) -> String {
         encode([machine.id, machine.target ?? "", machine.session, row["pane_id"] ?? "", row["terminal_id"] ?? "", row["agent_session"] ?? NSNull()])
     }
-    func snapshot() -> Row {
-        do { machines = try discover(); discoveryError = "" }
-        catch { discoveryError = error.localizedDescription; if machines.isEmpty { machines = [Machine(id:"local", label:"This Mac", target:nil, session:"default")] } }
+    // Each machine's last result. Machines are checked concurrently, and one
+    // that fails is retried on a widening interval instead of every poll, so an
+    // asleep remote never delays the others.
+    struct MachineResult { var agents: [Row]; var state: Row; var bindings: [String: (Machine, Row)] }
+    private(set) var results: [String: MachineResult] = [:]
+    private(set) var failures: [String: (count: Int, retryAt: Date)] = [:]
+    static let backoff: [TimeInterval] = [15, 30, 60]
+    func fetch(_ machine: Machine) -> MachineResult {
+        do {
+            let agents = try rows(machine, "agent"), spaces = try rows(machine, "workspace"), tabs = try rows(machine, "tab")
+            var bound: [String: (Machine, Row)] = [:]
+            let enriched = agents.map { original -> Row in
+                var row = original
+                row["id"] = Self.key(machine, row)
+                row["machine_label"] = machine.label; row["machine_id"] = machine.id; row["online"] = true
+                row["workspace_label"] = spaces.first(where: { ($0["workspace_id"] as? String) == (row["workspace_id"] as? String) })?["label"] ?? row["workspace_id"]
+                row["tab_label"] = tabs.first(where: { ($0["tab_id"] as? String) == (row["tab_id"] as? String) })?["label"] ?? row["tab_id"]
+                bound[row["id"] as! String] = (machine, original)
+                return row
+            }
+            return MachineResult(agents: enriched, state: machine.json.merging(["online": true, "count": enriched.count], uniquingKeysWith: { _, b in b }), bindings: bound)
+        } catch {
+            let cached = (results[machine.id]?.agents ?? []).map { $0.merging(["online": false], uniquingKeysWith: { _, b in b }) }
+            return MachineResult(agents: cached, state: machine.json.merging(["online": false, "error": error.localizedDescription], uniquingKeysWith: { _, b in b }), bindings: [:])
+        }
+    }
+    /// `only` limits the check to those machine ids (an event named them); nil
+    /// re-reads Herdr's saved machines and checks every machine that is due.
+    /// `force` ignores the failure backoff (manual refresh, or an event proved
+    /// the machine is reachable again).
+    func snapshot(only: Set<String>? = nil, force: Bool = false) -> Row {
+        if only == nil || machines.isEmpty {
+            do { machines = try discover(); discoveryError = "" }
+            catch { discoveryError = error.localizedDescription; if machines.isEmpty { machines = [Machine(id:"local", label:"This Mac", target:nil, session:"default")] } }
+        }
+        let now = Date()
+        let due = machines.filter { machine in
+            if let only = only, !only.contains(machine.id) { return results[machine.id] == nil }
+            return force || results[machine.id] == nil || (failures[machine.id].map { $0.retryAt <= now } ?? true)
+        }
+        var fresh = [MachineResult?](repeating: nil, count: due.count)
+        let lock = NSLock()
+        DispatchQueue.concurrentPerform(iterations: due.count) { index in
+            let result = fetch(due[index])
+            lock.lock(); fresh[index] = result; lock.unlock()
+        }
+        for (machine, result) in zip(due, fresh) {
+            guard var result = result else { continue }
+            if result.state["online"] as? Bool == true { failures[machine.id] = nil }
+            else {
+                let count = (failures[machine.id]?.count ?? 0) + 1, wait = Self.backoff[min(count, Self.backoff.count) - 1]
+                failures[machine.id] = (count, Date().addingTimeInterval(wait))
+                result.state["retryIn"] = Int(wait)
+            }
+            results[machine.id] = result
+        }
+        results = results.filter { id, _ in machines.contains(where: { $0.id == id }) }
+        failures = failures.filter { id, _ in machines.contains(where: { $0.id == id }) }
         var all: [Row] = [], states: [Row] = [], nextBindings: [String: (Machine, Row)] = [:]
         for machine in machines {
-            do {
-                let agents = try rows(machine, "agent"), spaces = try rows(machine, "workspace"), tabs = try rows(machine, "tab")
-                let enriched = agents.map { original -> Row in
-                    var row = original
-                    row["id"] = Self.key(machine, row)
-                    row["machine_label"] = machine.label; row["machine_id"] = machine.id; row["online"] = true
-                    row["workspace_label"] = spaces.first(where: { ($0["workspace_id"] as? String) == (row["workspace_id"] as? String) })?["label"] ?? row["workspace_id"]
-                    row["tab_label"] = tabs.first(where: { ($0["tab_id"] as? String) == (row["tab_id"] as? String) })?["label"] ?? row["tab_id"]
-                    nextBindings[row["id"] as! String] = (machine, original)
-                    return row
-                }
-                cache[machine.id] = enriched; all += enriched
-                states.append(machine.json.merging(["online": true, "count": enriched.count], uniquingKeysWith: { _, b in b }))
-            } catch {
-                all += (cache[machine.id] ?? []).map { $0.merging(["online":false], uniquingKeysWith: { _, b in b }) }
-                states.append(machine.json.merging(["online": false, "error": error.localizedDescription], uniquingKeysWith: { _, b in b }))
-            }
+            guard let result = results[machine.id] else { continue }
+            all += result.agents; states.append(result.state)
+            nextBindings.merge(result.bindings, uniquingKeysWith: { _, b in b })
         }
         bindings = nextBindings
-        cache = cache.filter { id, _ in machines.contains(where: { $0.id == id }) }
         return ["agents":all, "machines":states, "discoveryError":discoveryError]
     }
-    // Prompts re-read the saved machines before sending. Reads skip that extra
-    // Herdr call; the pane identity check below still refuses replaced agents.
-    func resolve(_ id: String, checkMachines: Bool = true) throws -> (Machine, Row) {
+    // Prompts re-read the saved machines and the agent's pane before sending,
+    // so a replaced agent or changed machine is refused.
+    func resolve(_ id: String) throws -> (Machine, Row) {
         guard let (machine, expected) = bindings[id] else { throw HUDError("Agent is offline or changed. Refresh and select it again.") }
-        if checkMachines {
-            let currentMachines = try discover()
-            guard currentMachines.contains(machine) else { throw HUDError("This machine's Herdr configuration changed. Refresh before sending.") }
-        }
+        guard try discover().contains(machine) else { throw HUDError("This machine's Herdr configuration changed. Refresh before sending.") }
         guard let current = try rows(machine, "agent").first(where: { ($0["pane_id"] as? String) == (expected["pane_id"] as? String) }),
               Self.key(machine, current) == id,
               (current["workspace_id"] as? String) == (expected["workspace_id"] as? String),
               (current["agent"] as? String) == (expected["agent"] as? String) else { throw HUDError("The selected agent was replaced. Select its new session.") }
         return (machine, current)
     }
+    // Reads trust the last snapshot's binding instead of listing agents again;
+    // events keep that snapshot current. Prompts still re-check identity.
     func output(_ id: String) throws -> Row {
-        let (machine, row) = try resolve(id, checkMachines: false)
-        return ["id":id, "provider":row["agent"] ?? "", "text":try call(machine, ["agent", "read", row["pane_id"] as! String, "--source", "recent-unwrapped", "--lines", "180"])]
+        guard let (machine, row) = bindings[id] else { throw HUDError("Agent is offline or changed. Refresh and select it again.") }
+        let pane = row["pane_id"] as! String
+        let text: String
+        do { text = try call(machine, ["agent", "read", pane, "--source", "recent-unwrapped", "--lines", "180"]) }
+        // Herdr can't scroll a blocked agent's history, so show its visible screen,
+        // which holds the question it is waiting on.
+        catch let error as HUDError where error.message.contains("agent_not_idle") { text = try call(machine, ["agent", "read", pane, "--source", "visible"]) }
+        return ["id":id, "provider":row["agent"] ?? "", "text":text]
+    }
+    // Picks one numbered option in a permission prompt or question by pressing
+    // its number key once. The agent is re-checked and its visible screen must
+    // still show the same question and option, so a stale card never answers a
+    // newer dialog. Herdr can report an open question as idle, so the screen is
+    // the proof, not the status. Never retried.
+    func answer(_ id: String, _ number: Int, question: String, label: String) throws -> Row {
+        guard (1...9).contains(number), !label.isEmpty, label.utf8.count <= 2000, question.utf8.count <= 2000 else { throw HUDError("That option can't be picked from the HUD. Answer in Herdr.") }
+        let (machine, row) = try resolve(id)
+        guard (row["agent_status"] as? String) != "working", let pane = row["pane_id"] as? String else { throw HUDError("The agent moved on. Refresh and check its screen.") }
+        let screen = try call(machine, ["agent", "read", pane, "--source", "visible"]).replacingOccurrences(of: "\u{00a0}", with: " ")
+        // Only the live dialog at the bottom counts: the last copy of the question,
+        // near the end of the screen with no later question, followed by the exact
+        // option line and a menu cursor or key hint. Matching anywhere would let transcript text pass.
+        let raw = screen.replacingOccurrences(of: "\r", with: "").components(separatedBy: "\n")
+        let lines = raw.map { $0.trimmingCharacters(in: CharacterSet(charactersIn: " │┃❯")) }
+        guard !question.isEmpty, let start = lines.lastIndex(of: question), lines.count - start <= 40,
+              lines[(start + 1)...].contains("\(number). \(label)"), !lines[(start + 1)...].contains(where: { $0.hasSuffix("?") }),
+              raw[(start + 1)...].contains(where: { $0.range(of: #"❯\s*\d{1,2}[.)]\s|Enter to select|Esc to cancel"#, options: .regularExpression) != nil })
+        else { throw HUDError("This question is no longer on screen. Refresh and check the agent.") }
+        do { _ = try call(machine, ["agent", "send-keys", pane, String(number)]) }
+        catch { throw HUDError("Answer uncertain. Check the agent in Herdr before answering again.") }
+        return ["ok":true, "id":id]
     }
     func prompt(_ id: String, _ message: String) throws -> Row {
         guard !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, message.utf8.count <= 60000, !message.contains("\0"), !message.hasPrefix("-") else { throw HUDError("Enter a prompt under 60 KB that does not start with a dash.") }

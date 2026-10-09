@@ -9,7 +9,9 @@ namespace HerdrHUD;
 
 // Spawn suspended, assign a kill-on-close job, then resume. Children cannot escape
 // cleanup by exiting their parent before Process.Kill(entireProcessTree) runs.
-sealed class OwnedProcess : IDisposable
+public interface IChildProcess : IDisposable { Stream Input {get;} Stream Output {get;} Stream Error {get;} void Stop(); }
+
+public sealed class OwnedProcess : IChildProcess
 {
     [StructLayout(LayoutKind.Sequential)] struct Startup { public int Size; public nint Reserved,Desktop,Title; public int X,Y,XSize,YSize,XCount,YCount,Fill,Flags; public short Show,Reserved2; public nint ReservedPtr,Input,Output,Error; }
     [StructLayout(LayoutKind.Sequential)] struct StartupEx { public Startup Info; public nint Attributes; }
@@ -36,6 +38,7 @@ sealed class OwnedProcess : IDisposable
     public FileStream Input {get;}
     public FileStream Output {get;}
     public FileStream Error {get;}
+    Stream IChildProcess.Input => Input; Stream IChildProcess.Output => Output; Stream IChildProcess.Error => Error;
     static void Require(bool ok) {if(!ok) throw new InvalidOperationException("Cannot create isolated command ("+Marshal.GetLastWin32Error()+").");}
     public static string Quote(string value) {
         var s=new StringBuilder("\"");int slashes=0;
@@ -91,8 +94,11 @@ public sealed class ProcessRunner
         async Task Write(){try{if(invocation.Input is not null)await child.Input.WriteAsync(invocation.Input,cancel.Token);child.Input.Close();}catch{cancel.Cancel();throw;}}
         var output=Read(child.Output,StdoutLimit);var errors=Read(child.Error,StderrLimit);var input=Write();
         var all=Task.WhenAll(output,errors,input,child.Process.WaitForExitAsync(cancel.Token));
-        try {await all.WaitAsync(cancel.Token);if(child.Process.ExitCode!=0)throw new InvalidOperationException("Herdr command failed.");return Encoding.UTF8.GetString(await output);}
+        try {await all.WaitAsync(cancel.Token);}
         catch {child.Stop();try{await all.WaitAsync(TimeSpan.FromSeconds(2));}catch{}throw new InvalidOperationException(invocation.Mutation?"Delivery uncertain or refused. Inspect Herdr before sending again.":"Herdr command timed out, failed, or exceeded its output limit.");}
+        // Like the Mac runner, a failed read carries Herdr's own error text.
+        if(child.Process.ExitCode!=0)throw new InvalidOperationException(invocation.Mutation?"Delivery uncertain or refused. Inspect Herdr before sending again.":Encoding.UTF8.GetString((await errors).AsSpan(0,Math.Min((await errors).Length,700))));
+        return Encoding.UTF8.GetString(await output);
     }
 }
 

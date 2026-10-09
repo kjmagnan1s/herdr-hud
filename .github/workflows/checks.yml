@@ -3,36 +3,50 @@ on: [push, pull_request]
 permissions:
   contents: read
 jobs:
-  macos:
-    runs-on: macos-latest
+  # Cheap, fast checks first: the shared web UI, the Python helpers against a
+  # fake Herdr server, and the event bridge against a real but isolated Herdr
+  # server that this job starts itself. No user agent is ever involved.
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: '24'
-      - run: swift test
       - run: node --test Tests/*.test.cjs
       - run: python3 Tests/test_prompt_helper.py
+      - name: Event bridge against a real, isolated Herdr
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/herdr" https://github.com/herdrdev/herdr/releases/latest/download/herdr-linux-x86_64
+          chmod +x "$RUNNER_TEMP/herdr"
+          HERDR_BIN="$RUNNER_TEMP/herdr" python3 -m unittest -v Tests/test_watch_bridge.py
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    needs: linux
+    steps:
+      - uses: actions/checkout@v5
+      - run: swift test
       - run: scripts/package-macos.sh
       - run: codesign --verify --deep --strict 'dist/Herdr HUD.app'
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v4
         with:
           name: herdr-hud-macos-arm64-alpha
           path: dist/Herdr-HUD-macOS-arm64.zip
   windows:
     runs-on: windows-latest
+    timeout-minutes: 30
+    needs: linux
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '24'
-      - run: node --test Tests/model.test.cjs Tests/composer.test.cjs
+      - run: dotnet run --project Windows.Tests/HerdrHUD.Tests.csproj -c Release
       - shell: pwsh
         run: ./scripts/package-windows.ps1
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v4
         with:
           name: herdr-hud-windows-x64-alpha
           path: dist/Herdr-HUD-Windows-x64.zip

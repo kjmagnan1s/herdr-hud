@@ -3,8 +3,8 @@ const $=id=>document.getElementById(id);
 const post=data=>window.webkit?.messageHandlers?.hud ? window.webkit.messageHandlers.hud.postMessage(data) : window.chrome.webview.postMessage(data);
 if(window.chrome?.webview)window.chrome.webview.addEventListener('message',event=>window.receive(event.data));
 let agents=[],selected='',opened=false,mode='chat',filter='',reading=false,sending=false,requestSequence=0,lastOutput='',lastRendered='',selectionEpoch=0;
-let baseline=false,unread=new Set(),drafts=new Map(),outputs=new Map(),since=new Map(),uncertain=new Set(),promptByRequest=new Map();
-let names=new Map(),parsed=new Map(),failed=new Set(),wantSelected=false;
+let answering=false,baseline=false,unread=new Set(),drafts=new Map(),outputs=new Map(),since=new Map(),uncertain=new Set(),promptByRequest=new Map();
+let names=new Map(),parsed=new Map(),failed=new Set(),wantSelected=false,alerted=new Map(),changedAt=new Map();
 const chatProviders=new Set(['codex','claude']);
 if(window.webkit?.messageHandlers?.hud)document.documentElement?.classList.add('glass'); // macOS draws a native blur behind the page.
 function request(op,extra={}){const requestID=`${Date.now()}-${++requestSequence}`;post({op,requestID,...extra});return requestID;}
@@ -19,18 +19,39 @@ function stateLabel(a){return !a.online?'Offline':status(a)==='blocked'?'Needs i
 function stateClass(a){return !a.online?'offline':status(a)==='blocked'?'blocked':a.agent_status==='working'?'working':unread.has(a.id)?'unread':a.agent_status==='done'?'done':'idle';}
 function el(tag,text,cls){const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(cls)node.className=cls;return node;}
 function notice(text){$('notice').hidden=!text;$('notice').textContent=text;}
-function badge(){post({op:'badge',count:agents.filter(a=>status(a)==='blocked'||unread.has(a.id)).length});}
+// The H shows the most urgent state only: red counts agents that need input,
+// otherwise blue counts unread results. An amber arc turns while any agent works.
+function badge(){
+  const blocked=agents.filter(a=>a.online&&status(a)==='blocked').length,fresh=agents.filter(a=>unread.has(a.id)&&status(a)!=='blocked').length;
+  post({op:'badge',count:blocked||fresh,tone:blocked?'blocked':fresh?'unread':'',working:agents.filter(a=>a.online&&a.agent_status==='working').length});
+}
+// Alerts since the panel was last opened, kept while they still need attention.
+// New ones show (or update) one toast; ones handled elsewhere update it quietly.
+function notify(updates){
+  for(const a of updates)alerted.set(a.id,a.agent_status==='blocked'?'blocked':'done');
+  const key=()=>JSON.stringify([...alerted]),before=key();
+  for(const [id,tone] of alerted){const a=agents.find(x=>x.id===id);if(!a||!a.online||(tone==='blocked'?status(a)!=='blocked':!unread.has(id)||status(a)==='blocked'||a.agent_status==='working'))alerted.delete(id);}
+  if(opened)return;
+  const items=[...alerted].map(([id,tone])=>({agent:agents.find(a=>a.id===id),tone})),s=HUDModel.summary(items,name);
+  if(updates.length&&s){if(s.count===1)request('alertPreview',{id:s.id,title:s.title,tone:s.tone});else post({op:'alert',...s});}
+  else if(key()!==before)post(s?{op:'alert',...s,update:true}:{op:'alertClear'});
+}
 // Two-character label for the narrow roster rail: "Documents 2" → "D2", "herdr-hud" → "HH".
 function initials(text){const words=String(text).split(/[\s_.-]+/).filter(Boolean);const tail=/\d+$/.exec(text)?.[0];return ((words[0]?.[0]||'?')+(tail||words[1]?.[0]||words[0]?.[1]||'')).toUpperCase().slice(0,3);}
+// Roster cards follow the Claude app's session list: an icon tinted by state,
+// the title, how long ago the state changed, then the latest ask in an inset.
+// Details that do not fit (workspace, machine, mode) stay in the tooltip.
 function renderRoster(){
   $('count').textContent=agents.length;const roster=$('roster'),scroll=roster.scrollTop,multiMachine=new Set(agents.map(a=>a.machine_id)).size>1;
   const items=HUDModel.sorted(agents,unread).filter(a=>`${name(a)} ${a.workspace_label} ${a.machine_label} ${a.agent}`.toLowerCase().includes(filter));
   roster.replaceChildren(...items.map(a=>{const state=stateClass(a);const button=el('button',undefined,'agent '+state+(a.id===selected?' selected':''));button.setAttribute('aria-pressed',String(a.id===selected));
     const metadata=parsedOutput(a.id,a.agent),preview=metadata.dialog&&status(a)==='blocked'?metadata.dialog.question||metadata.dialog.title:HUDModel.preview(metadata);
     const meta=[a.workspace_label||a.workspace_id,a.agent||'agent'];if(metadata.mode)meta.push(metadata.mode==='Ask'?'Asks permission':`${metadata.mode} mode`);if(multiMachine)meta.push(a.machine_label);
-    button.append(el('span',undefined,'dot '+state),el('span',name(a),'agent-name'),el('span',stateLabel(a),'badge '+state),el('span',initials(name(a)),'agent-abbr'));
-    if(preview)button.append(el('span',preview,'agent-sub'));
-    button.append(el('span',meta.filter(Boolean).join(' · '),'agent-meta'));
+    const icon=el('span','</>','agent-icon '+state);icon.setAttribute('aria-hidden','true');icon.append(el('span',undefined,'dot '+state));
+    const when=changedAt.has(a.id)?HUDModel.ago(changedAt.get(a.id),Date.now()):'';
+    button.append(icon,el('span',name(a),'agent-name'),el('span',when,'agent-time'),el('span',initials(name(a)),'agent-abbr'));
+    if(preview)button.append(el('span',preview,'agent-ask'));
+    button.setAttribute('aria-label',`${name(a)}, ${stateLabel(a)}`);
     button.title=[name(a)+' · '+stateLabel(a),meta.join(' · '),metadata.model&&`${metadata.model} ${metadata.reasoning}`.trim()].filter(Boolean).join('\n');button.onclick=()=>select(a.id);return button;}));
   if(!items.length)roster.append(el('p',agents.length?'No matching agents.':'No agents found. Start an agent in Herdr.','empty'));roster.scrollTop=scroll;
 }
@@ -52,7 +73,7 @@ function renderHeader(){
   if(busy&&!since.has(a.id))since.set(a.id,Date.now());
   $('send').disabled=!a?.online||!['idle','done'].includes(state)||sending||uncertain.has(selected)||!$('prompt').value.trim();
   $('prompt').disabled=!a;$('chat').disabled=!chatProviders.has(a?.agent);
-  $('send-status').textContent=sending?'Sending once…':uncertain.has(selected)?'Delivery uncertain. Inspect this agent in Herdr before sending again.':!a?'Choose an agent to get started.':!a.online?'Machine offline. Your draft is retained.':state==='blocked'?'Needs your input in Herdr. Native approvals remain in its terminal.':busy?'Agent is working. You can draft the next prompt here.':['idle','done'].includes(state)?'Ready for your next prompt.':'Agent state is unknown. Sending is disabled.';
+  $('send-status').textContent=sending?'Sending once…':uncertain.has(selected)?'Delivery uncertain. Inspect this agent in Herdr before sending again.':!a?'Choose an agent to get started.':!a.online?'Machine offline. Your draft is retained.':state==='blocked'?'Needs your input. Pick an option above, or answer in Herdr.':busy?'Agent is working. You can draft the next prompt here.':['idle','done'].includes(state)?'Ready for your next prompt.':'Agent state is unknown. Sending is disabled.';
   $('reconcile').hidden=!uncertain.has(selected);
 }
 function inline(text,parent){HUDRender.inline(text,parent);} // No terminal text is ever interpreted as HTML.
@@ -93,25 +114,33 @@ function renderOutput(){
 function read(){if(!opened||reading||!active()?.online)return;reading=true;wantSelected=false;request('output',{id:selected});}
 // While the panel is open and idle, load agents the HUD has not read yet, one at
 // a time, so switching to them shows their conversation immediately.
-function prefetch(){if(!opened||reading)return;const next=agents.find(a=>a.online&&a.id!==selected&&!outputs.has(a.id)&&!failed.has(a.id));if(!next)return;reading=true;request('output',{id:next.id});}
+// Only agents likely to be opened next: needing input, unread, working or done.
+function prefetch(){if(!opened||reading)return;const next=agents.find(a=>a.online&&a.id!==selected&&!outputs.has(a.id)&&!failed.has(a.id)&&(status(a)==='blocked'||unread.has(a.id)||['working','done'].includes(a.agent_status)));if(!next)return;reading=true;request('output',{id:next.id});}
+// Clicking an option in a live permission prompt or question answers it once.
+$('output').onclick=event=>{
+  const pick=event.target.closest?.('.dialog-answer');if(!pick||answering||!active()?.online)return;
+  answering=true;notice('');for(const b of $('output').querySelectorAll('.dialog-answer'))b.disabled=true;pick.classList.add('picked');
+  request('answer',{id:selected,n:Number(pick.dataset.n),label:pick.dataset.label,question:pick.dataset.question});
+};
 function send(){if($('send').disabled)return;const id=selected,message=$('prompt').value;sending=true;notice('');const requestID=request('prompt',{id,message});promptByRequest.set(requestID,{id,message});renderHeader();}
 window.receive=({type,data})=>{
   if(type==='roster'){
     const before=agents;agents=data.agents||[];
-    if(baseline)for(const a of agents){const old=before.find(b=>b.id===a.id);if(old&&a.online&&old.online&&old.agent_status!==a.agent_status)unread.add(a.id);}
+    if(baseline)for(const a of agents){const old=before.find(b=>b.id===a.id);if(old&&a.online&&old.online&&old.agent_status!==a.agent_status)unread.add(a.id);if(!old||old.agent_status!==a.agent_status)changedAt.set(a.id,Date.now());}
     const updates=baseline?HUDModel.alerts(before,agents):[];baseline=true;
     for(const a of agents){if(a.agent_status==='working'&&!since.has(a.id))since.set(a.id,Date.now());if(a.agent_status!=='working')since.delete(a.id);}
     const valid=new Set(agents.map(a=>a.id));names=HUDModel.labels(agents);
     for(const old of before)if(!valid.has(old.id)){const next=agents.find(a=>!before.some(b=>b.id===a.id)&&HUDModel.pane(a)&&HUDModel.pane(a)===HUDModel.pane(old));if(next){rebind(old.id,next.id);if(unread.has(old.id))unread.add(next.id);}}
     unread=new Set([...unread].filter(id=>valid.has(id)));for(const id of [...outputs.keys(),...parsed.keys()])if(!valid.has(id)){outputs.delete(id);parsed.delete(id);}failed=new Set([...failed].filter(id=>valid.has(id)));
-    if(updates.length&&!opened){const a=updates[0];request('alertPreview',{id:a.id,title:name(a)+(a.agent_status==='blocked'?' needs input':' finished')});}
-    $('machines').replaceChildren(...(data.machines||[]).map(m=>{const node=el('span',undefined,'machine');node.append(el('span',undefined,'dot '+(m.online?'online':'')),document.createTextNode(`${m.label} · ${m.online?`${m.count} agents`:'offline'}`));node.title=m.error||'';return node;}));
+    // The HUD runs beside Herdr, so a healthy connection needs no status line.
+    // Only machines that are offline are named.
+    $('machines').replaceChildren(...(data.machines||[]).filter(m=>!m.online).map(m=>{const node=el('span',undefined,'machine');node.append(el('span',undefined,'dot offline'),document.createTextNode(`${m.label} · ${m.retryIn?'offline, retrying':'offline'}`));node.title=m.error||'';return node;}));
     if(data.discoveryError)notice('Herdr setup: '+data.discoveryError);
-    if((!selected||!valid.has(selected))&&agents.length)select(agents[0].id);renderRoster();renderHeader();badge();read();prefetch();
-  }else if(type==='visibility'){opened=data.open;if(opened){renderHeader();wantSelected=true;read();}}
+    if((!selected||!valid.has(selected))&&agents.length)select(agents[0].id);renderRoster();renderHeader();badge();notify(updates);read();prefetch();
+  }else if(type==='visibility'){opened=data.open;if(opened){alerted.clear();renderHeader();wantSelected=true;read();}}
   else if(type==='resetBaseline'){baseline=false;}
   else if(type==='select'){select(data.id);}
-  else if(type==='alertPreview'){if(!opened){const parsed=HUDModel.parse(data.text,data.provider),reply=parsed.dialog?[parsed.dialog.title,parsed.dialog.question].filter(Boolean).join(': '):parsed.blocks.filter(x=>x.kind==='reply').at(-1)?.text||'';post({op:'alert',id:data.id,title:data.title,preview:reply.replace(/\s+/g,' ').slice(0,200)||'Click to read the latest output'});}}
+  else if(type==='alertPreview'){if(!opened){const parsed=HUDModel.parse(data.text,data.provider),reply=parsed.dialog?[parsed.dialog.title,parsed.dialog.question].filter(Boolean).join(': '):parsed.blocks.filter(x=>x.kind==='reply').at(-1)?.text||'';post({op:'alert',id:data.id,title:data.title,tone:data.tone,preview:reply.replace(/\s+/g,' ').slice(0,200)||'Click to read the latest output'});}}
   else if(type==='output'){
     reading=false;if(data.error){if(data.id===selected)notice(data.error);else failed.add(data.id);if(wantSelected)read();else prefetch();return;}
     outputs.set(data.id,data);if(data.id!==selected){renderRoster();if(wantSelected)read();else prefetch();return;}
@@ -120,6 +149,9 @@ window.receive=({type,data})=>{
     const pending=promptByRequest.get(data.requestID);if(!pending)return;promptByRequest.delete(data.requestID);sending=false;
     if(data.error){notice(data.error);if(/uncertain/i.test(data.error))uncertain.add(pending.id);}
     else{if(selected===pending.id&&$('prompt').value===pending.message)$('prompt').value='';if(drafts.get(pending.id)===pending.message)drafts.delete(pending.id);notice('Prompt sent.');request('refresh');}renderHeader();
+  }else if(type==='answer'){
+    answering=false;if(data.error)notice(data.error);else notice('Answer sent.');
+    if(data.id===selected){lastRendered='';renderOutput();wantSelected=true;read();}
   }else if(type==='preferences'){if(data.selectedAgent&&!selected)selected=data.selectedAgent;if(data.rosterWidth>=56)document.querySelector('aside').style.width=data.rosterWidth+'px';mode=data.mode||'chat';}
   else if(type==='notice'){notice(data.message);}
 };
@@ -143,7 +175,11 @@ for(const view of ['chat','terminal'])$(view).onclick=()=>{mode=view;request('pr
 const divider=$('divider');divider.onpointerdown=e=>{divider.setPointerCapture(e.pointerId);};divider.onpointermove=e=>{if(divider.hasPointerCapture(e.pointerId)){const aside=document.querySelector('aside');aside.style.width=Math.min(Math.max(e.clientX-aside.getBoundingClientRect().left,56),innerWidth*.42)+'px';}};
 divider.onpointerup=()=>request('preferences',{rosterWidth:document.querySelector('aside').offsetWidth});
 divider.onkeydown=e=>{if(['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();const aside=document.querySelector('aside');aside.style.width=Math.min(Math.max(aside.offsetWidth+(e.key==='ArrowLeft'?-15:15),56),innerWidth*.42)+'px';request('preferences',{rosterWidth:aside.offsetWidth});}};
+setInterval(()=>{if(opened)renderRoster();},30000);
 setInterval(()=>{const a=active();if(a?.agent_status==='working'){const seconds=Math.max(0,Math.floor((Date.now()-(since.get(a.id)||Date.now()))/1000));$('work-text').textContent=`Working · ${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')} observed`; }},1000);
+// The roster only arrives when it changes, so the open agent's output is read
+// on its own clock.
+setInterval(()=>{if(opened)read();},3000);
 request('ready');
 // Read-only integration check used by --verify-ui; never presses Send.
 window.verifyControls=async()=>{

@@ -124,8 +124,8 @@
     return card;
   }
 
-  // A permission prompt or question Claude is waiting on. The HUD only types
-  // text, so the card shows the choices and sends the user to Herdr to answer.
+  // A permission prompt or question Claude is waiting on. While it is live, each
+  // option is a button; the host re-checks the screen and presses that number once.
   function dialogCard(block,live){
     const permission=block.type==='permission';
     const card=el('div',undefined,`dialog ${permission?'permission':'question'}${live?' live':''}`);
@@ -138,13 +138,16 @@
     const list=el('ol',undefined,'dialog-options');
     for(const option of block.options||[]){
       const item=el('li',undefined,'dialog-option'+(option.selected?' selected':''));
-      item.append(el('span',String(option.n),'dialog-n'));
+      // "Type something" and "Chat about this" open a text box the HUD can't fill.
+      const pick=live&&!!block.question&&option.n<=9&&!/^(Type something|Chat about this)/i.test(option.label);const row=pick?el('button',undefined,'dialog-answer'):item;
+      if(pick){row.type='button';Object.assign(row.dataset,{n:String(option.n),label:option.label,question:block.question||''});item.append(row);}
+      row.append(el('span',String(option.n),'dialog-n'));
       const text=el('span',undefined,'dialog-label');text.append(el('span',option.label));
       if(option.description)text.append(el('span',option.description,'dialog-desc'));
-      item.append(text);list.append(item);
+      row.append(text);list.append(item);
     }
     card.append(list);
-    card.append(el('div',live?'Answer in Herdr. The HUD can only send text prompts, so it never picks an option for you.':'This was on screen when the HUD last read the agent.','dialog-note'));
+    card.append(el('div',live?'Click an option to answer. The HUD checks that this question is still on screen first.':'This was on screen when the HUD last read the agent.','dialog-note'));
     return card;
   }
 

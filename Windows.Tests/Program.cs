@@ -30,9 +30,54 @@ await Test("idle prompts go once, with literal Unicode multiline stdin", async (
 await Test("busy, blocked and unknown states refuse sends", async () => {
     foreach (string state in new[] { "working", "blocked", "unknown", "" }) { var fake = new Fake(); var client = fake.Client(); var id = await fake.ID(client); fake.Status = state; await Refused(() => client.Prompt(id, "hello"), "busy"); Check(fake.Sends == 0, "Sent to busy agent"); }
 });
-await Test("replaced pane identity refuses output and prompts", async () => {
+await Test("replaced pane identity refuses prompts at once and reads after the next snapshot", async () => {
     var fake = new Fake(); var client = fake.Client(); var id = await fake.ID(client); fake.Terminal = "replacement";
-    await Refused(() => client.Prompt(id, "hello"), "replaced"); await Refused(() => client.Output(id), "replaced"); Check(fake.Sends == 0, "Stale send");
+    await Refused(() => client.Prompt(id, "hello"), "replaced"); Check(fake.Sends == 0, "Stale send");
+    await client.Snapshot(); await Refused(() => client.Output(id), "offline or changed");
+});
+await Test("reads use the snapshot binding without listing agents again", async () => {
+    var fake = new Fake(); var client = fake.Client(); var id = await fake.ID(client); int before = fake.Lists;
+    Check((await client.Output(id))["text"]!.GetValue<string>() == "• Fixture output" && fake.Lists == before, "Read listed agents again");
+});
+await Test("answers press the on-screen option once and refuse stale or busy dialogs", async () => {
+    var fake = new Fake { Status = "blocked", Screen = "│ Do you want to proceed?   │\n│ ❯ 1. Yes                   │\n│   2. No                    │" }; var client = fake.Client(); var id = await fake.ID(client);
+    await client.Answer(id, 1, "Do you want to proceed?", "Yes"); Check(fake.Keys.Count == 1 && fake.Keys[0][^2] == "p1" && fake.Keys[0][^1] == "1", "Answer not sent once");
+    await Refused(() => client.Answer(id, 1, "Do you want to delete it?", "Yes"), "no longer on screen");
+    await Refused(() => client.Answer(id, 2, "Do you want to proceed?", "Yes"), "no longer on screen");
+    await Refused(() => client.Answer(id, 0, "Do you want to proceed?", "Yes"), "can't be picked");
+    await Refused(() => client.Answer(id, 1, "", "Yes"), "no longer on screen");
+    fake.Screen = "Do you want to proceed?\n1. Yes\n2. No\n\nWhich file should I delete?\n❯ 1. Everything\n  2. Nothing\nEsc to cancel";
+    await Refused(() => client.Answer(id, 1, "Do you want to proceed?", "Yes"), "no longer on screen");
+    fake.Screen = "│ Do you want to proceed?   │\n│ ❯ 1. Yes                   │\n│   2. No                    │";
+    fake.Status = "working"; await Refused(() => client.Answer(id, 1, "Do you want to proceed?", "Yes"), "moved on");
+    fake.Status = "blocked"; fake.KeysFail = true; await Refused(() => client.Answer(id, 1, "Do you want to proceed?", "Yes"), "uncertain");
+    Check(fake.Keys.Count == 2, "Answer retried or sent to a stale dialog");
+});
+await Test("an offline machine backs off and the others keep updating", async () => {
+    var fake = new Fake { Remote = true }; var client = fake.Client(); await client.Snapshot(); fake.RemoteOffline = true;
+    var first = await client.Snapshot(); int attempts = fake.RemoteCalls;
+    await client.Snapshot(); await client.Snapshot();
+    Check(fake.RemoteCalls == attempts, "Offline machine retried every poll");
+    var state = first["machines"]!.AsArray().First(m => m!["id"]!.GetValue<string>() == "remote")!;
+    Check(!state["online"]!.GetValue<bool>() && state["retryIn"]!.GetValue<int>() == 15, "Backoff not reported");
+    Check(first["agents"]!.AsArray().Any(a => a!["machine_id"]!.GetValue<string>() == "local" && a["online"]!.GetValue<bool>()), "Local machine lost");
+    fake.RemoteOffline = false; await client.Snapshot(force: true); Check(fake.RemoteCalls > attempts, "Forced check skipped");
+});
+await Test("an event re-reads only the machine it came from", async () => {
+    var fake = new Fake { Remote = true }; var client = fake.Client(); await client.Snapshot(); int before = fake.RemoteCalls;
+    var data = await client.Snapshot(new HashSet<string> { "local" }, true);
+    Check(fake.RemoteCalls == before && data["agents"]!.AsArray().Count == 2, "Other machines were re-read or dropped");
+});
+await Test("event bridge commands are literal, read-only and kept alive", () => {
+    var machine = new Machine("remote", "Remote", "my-alias", "dev's session");
+    var nested = new HerdrClient("user@source").WatchInvocation(machine)!;
+    Check(!nested.Mutation && nested.Arguments[^2] == "user@source" && nested.Arguments.Contains("ServerAliveInterval=15"), "Root link not kept alive");
+    var outer = ShellWords(nested.Arguments[^1]); Check(outer[0] == "ssh" && outer[^2] == "my-alias" && outer.Contains("ServerAliveCountMax=2"), "Nested link not kept alive");
+    var inner = ShellWords(outer[^1]); Check(inner[0] == "python3" && inner[1] == "-c" && inner[2].Contains("events.subscribe"), "Bridge script changed");
+    Check(!string.Join(" ", nested.Arguments).Contains("dev's session") && JsonNode.Parse(nested.Input!)!["session"]!.GetValue<string>() == "dev's session" && nested.Input![^1] == (byte)'\n', "Session not on stdin");
+    Check(new HerdrClient().WatchInvocation(new Machine("local", "PC", null, "default")) is null, "Windows-native Herdr cannot run the bridge; it is polled");
+    Check(new HerdrClient().WatchInvocation(machine)!.Arguments[^2] == "my-alias", "Direct remote target");
+    return Task.CompletedTask;
 });
 await Test("conversation and workspace replacements refuse", async () => {
     foreach (bool conversation in new[] {true,false}) { var fake = new Fake(); var client = fake.Client(); var id = await fake.ID(client); if(conversation)fake.Conversation="new";else fake.Workspace="new"; await Refused(() => client.Prompt(id,"hello"),"replaced"); Check(fake.Sends == 0,"Sent to replacement"); }
@@ -40,7 +85,7 @@ await Test("conversation and workspace replacements refuse", async () => {
 await Test("offline cache remains visible but cannot send, reconnect recovers", async () => {
     var fake = new Fake(); var client = fake.Client(); var id = await fake.ID(client); fake.Offline = true;
     var snapshot = await client.Snapshot(); Check(snapshot["agents"]![0]!["online"]!.GetValue<bool>() == false, "Cache missing or online");
-    await Refused(() => client.Prompt(id, "hello"), "offline"); fake.Offline = false; Check((await client.Snapshot())["agents"]![0]!["online"]!.GetValue<bool>(), "Did not reconnect");
+    await Refused(() => client.Prompt(id, "hello"), "offline"); fake.Offline = false; Check((await client.Snapshot(force: true))["agents"]![0]!["online"]!.GetValue<bool>(), "Did not reconnect");
 });
 await Test("saved machine removal or target change refuses stale sends", async () => {
     foreach (bool remove in new[]{true,false}) { var fake = new Fake{Remote=true}; var client=fake.Client(); var snapshot=await client.Snapshot(); string id=snapshot["agents"]![1]!["id"]!.GetValue<string>(); if(remove)fake.Remote=false;else fake.Target="new-host";await Refused(()=>client.Prompt(id,"hello"),"configuration changed");Check(fake.Sends==0,"Sent to changed host"); }
@@ -75,6 +120,22 @@ await Test("source and named session are part of identity", () => {
     var row = Fake.Agent("idle","t1","w1","c1"); var machine = new Machine("local","Source",null,"default");
     Check(new HerdrClient("first").Key(machine,row) != new HerdrClient("second").Key(machine,row),"Root collision");
     Check(new HerdrClient("first","one").Key(machine,row) != new HerdrClient("first","two").Key(machine,row),"Session collision"); return Task.CompletedTask;
+});
+await Test("event watcher restarts a silent link and stops cleanly", async () => {
+    // A stand-in bridge that says ready, then goes quiet: the watchdog must end it.
+    int spawned = 0; var signals = new System.Collections.Concurrent.ConcurrentQueue<EventWatcher.Signal>(); var again = new TaskCompletionSource();
+    var watcher = new EventWatcher(new Machine("m", "M", "host", "default"), new Invocation("bridge", []), signal => { signals.Enqueue(signal); if (signals.Count(s => s == EventWatcher.Signal.Ready) >= 2) again.TrySetResult(); },
+        silenceSeconds: 0.3, spawn: _ => { Interlocked.Increment(ref spawned); return new ScriptedChild("{\"type\":\"ready\"}\n{\"type\":\"changed\"}\nnot json\n", hang: true); });
+    watcher.Start(); await again.Task.WaitAsync(TimeSpan.FromSeconds(5));
+    Check(signals.Take(3).SequenceEqual([EventWatcher.Signal.Ready, EventWatcher.Signal.Changed, EventWatcher.Signal.Down]), string.Join(",", signals));
+    watcher.Dispose(); await Task.Delay(1500); int after = spawned; await Task.Delay(1500); Check(spawned == after, "Kept restarting after stop");
+});
+await Test("event watcher reports bridge lines and restarts it after exit", async () => {
+    var signals = new System.Collections.Concurrent.ConcurrentQueue<EventWatcher.Signal>(); var twice = new TaskCompletionSource();
+    var bridge = new Invocation("powershell.exe", ["-NoProfile", "-Command", "[Console]::In.ReadLine() | Out-Null; '{\"type\":\"ready\"}'; '{\"type\":\"changed\"}'"], Input: System.Text.Encoding.UTF8.GetBytes("{}\n"));
+    using var watcher = new EventWatcher(new Machine("m", "M", "host", "default"), bridge, signal => { signals.Enqueue(signal); if (signals.Count(s => s == EventWatcher.Signal.Ready) >= 2) twice.TrySetResult(); });
+    watcher.Start(); await twice.Task.WaitAsync(TimeSpan.FromSeconds(15));
+    Check(signals.Take(3).SequenceEqual([EventWatcher.Signal.Ready, EventWatcher.Signal.Changed, EventWatcher.Signal.Down]), string.Join(",", signals));
 });
 await Test("process output drains stdout and stderr without deadlock", async () => {
     var runner = new ProcessRunner(); string raw = await runner.Run(new Invocation("powershell.exe", ["-NoProfile", "-Command", "[Console]::Out.Write(('x'*150000)); [Console]::Error.Write(('y'*60000))"])); Check(raw.Length == 150000,"Output truncated");
@@ -119,8 +180,10 @@ Console.WriteLine($"{passed} tests passed.");
 sealed class Fake
 {
     public string Status = "idle", Terminal = "t1", Workspace = "w1", Conversation = "c1", Target="remote-host";
-    public bool Offline, BadAck, Remote;
-    public int Sends;
+    public bool Offline, BadAck, Remote, RemoteOffline, KeysFail;
+    public string Screen = "";
+    public List<string[]> Keys = new();
+    public int Sends, Lists, RemoteCalls;
     public Invocation? Last;
     public static JsonObject Agent(string status,string terminal,string workspace,string conversation) => new() { ["pane_id"]="p1", ["terminal_id"]=terminal,["workspace_id"]=workspace,["tab_id"]="tab1",["agent_session"]=conversation,["agent"]="codex",["agent_status"]=status };
     public HerdrClient Client() => new(binary:"herdr-test.exe", execute:Run);
@@ -132,10 +195,30 @@ sealed class Fake
         var text=string.Join(" ",args);
         if (text.Contains("machine") && text.Contains("list")) return Task.FromResult(Remote ? new JsonArray(new JsonObject{["id"]="remote",["target"]=Target,["session"]="default",["enabled"]=true}).ToJsonString() : "[]");
         if (Offline) throw new InvalidOperationException("offline fixture");
+        if (text.Contains(Target)) { RemoteCalls++; if (RemoteOffline) throw new InvalidOperationException("remote offline fixture"); }
         if(invocation.Mutation){Sends++;return Task.FromResult(BadAck?"broken ack":"{\"result\":{\"type\":\"agent_prompted\",\"agent\":{\"terminal_id\":\"t1\"}}}");}
         if(text.Contains("workspace"))return Task.FromResult("{\"result\":{\"workspaces\":[]}}");
         if(text.Contains("tab"))return Task.FromResult("{\"result\":{\"tabs\":[]}}");
-        if(text.Contains("read"))return Task.FromResult("• Fixture output");
+        if(args.Contains("send-keys")){Keys.Add(args.ToArray());if(KeysFail)throw new InvalidOperationException("keys fixture");return Task.FromResult("");}
+        if(text.Contains("read"))return Task.FromResult(args.Contains("visible")?Screen:"• Fixture output");
+        Lists++;
         return Task.FromResult(new JsonObject{["result"]=new JsonObject{["agents"]=new JsonArray(Agent(Status,Terminal,Workspace,Conversation))}}.ToJsonString());
     }
+}
+
+// An in-memory bridge: writes its script to stdout, then ends or hangs until stopped.
+sealed class ScriptedChild : IChildProcess
+{
+    readonly System.IO.Pipelines.Pipe pipe = new();
+    public Stream Input { get; } = new MemoryStream();
+    public Stream Output { get; }
+    public Stream Error { get; } = new MemoryStream();
+    public ScriptedChild(string script, bool hang)
+    {
+        Output = pipe.Reader.AsStream();
+        pipe.Writer.WriteAsync(System.Text.Encoding.UTF8.GetBytes(script)).AsTask().Wait();
+        if (!hang) pipe.Writer.Complete();
+    }
+    public void Stop() => pipe.Writer.Complete();
+    public void Dispose() => Stop();
 }
