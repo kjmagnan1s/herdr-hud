@@ -94,31 +94,39 @@
     }
   }
 
-  const PROVIDERS={claude:'Claude',codex:'Codex'};
-  const TOOL_GLYPH={Bash:'$',Read:'◱',Write:'✎',Edit:'✎',Update:'✎',MultiEdit:'✎',Grep:'⌕',Glob:'⌕',WebFetch:'↗',WebSearch:'⌕',TodoWrite:'☐'};
-
+  // Rows use Claude Code's own marks: ❯ for what you asked, ⏺ for each step,
+  // ⎿ for a result. Long results fold; the first line stays visible.
+  function mark(tone){return el('span','⏺','step'+(tone?' '+tone:''));}
+  function resultLine(text){const line=el('div',undefined,'result-line');line.append(el('span','⎿','elbow'),el('span',text,'result-text'));return line;}
   function toolRow(block,key,expanded){
-    const name=block.title||'Tool',detail=block.detail||'';
-    const head=[el('span',TOOL_GLYPH[name]||'›','tool-glyph'),el('span',name,'tool-name')];
-    if(detail)head.push(el('span',detail,'tool-detail'));
-    if(!block.result){const row=el('div',undefined,'tool');row.append(...head);return row;}
+    const name=block.title||'Tool',detail=block.detail||'',result=block.result||'',lines=result.split('\n'),first=lines.find(l=>l.trim())||'';
+    const failed=/\b(error|failed|not found|denied)\b/i.test(first);
+    const head=el('span',undefined,'tool-head');head.append(mark(failed?'fail':'ok'),el('span',name,'tool-name'));
+    if(detail)head.append(el('span',`(${detail})`,'tool-detail'));
+    // Edits show their diff inline, as Claude Code does: numbered lines, - in red, + in green.
+    const DIFF=/^\s*\d+ ([+-]) /;
+    if(lines.some(l=>DIFF.test(l))){
+      const row=el('div',undefined,'tool');row.append(head,resultLine(first.trim()));
+      const pre=el('pre',undefined,'tool-output diff');
+      for(const line of lines.slice(lines.indexOf(first)+1)){const m=DIFF.exec(line);pre.append(el('span',line,'diff-line'+(m?m[1]==='+'?' add':' del':'')));}
+      row.append(pre);return row;
+    }
+    const more=lines.filter(l=>l.trim()).length>1;
+    if(!more){const row=el('div',undefined,'tool');row.append(head);if(first)row.append(resultLine(first.trim()));return row;}
     const details=el('details',undefined,'tool');details.dataset.key=key;details.open=expanded.has(key);
-    const summary=el('summary');summary.append(...head);
-    const firstLine=block.result.split('\n')[0];
-    if(block.result.split('\n').length===1&&firstLine.length<90){summary.append(el('span',firstLine,'tool-result-inline'));}
-    details.append(summary,el('pre',block.result,'tool-output'));return details;
+    const summary=el('summary');summary.append(head,resultLine(`${first.trim()}  +${lines.filter(l=>l.trim()).length-1} lines`));
+    details.append(summary,el('pre',result,'tool-output'));return details;
   }
 
   function agentCard(block,key,expanded){
     const card=el('div',undefined,'subagent');
-    const head=el('div',undefined,'subagent-head');
-    head.append(el('span','Subagent','chip'),el('span',block.title==='Task'||block.title==='Agent'?'Task':block.title,'subagent-type'));
+    const head=el('div',undefined,'tool-head');
+    head.append(mark('agent'),el('span',block.title==='Task'||block.title==='Agent'?'Task':block.title,'tool-name'),el('span','subagent','chip'));
     card.append(head);
     if(block.detail)card.append(el('div',block.detail,'subagent-task'));
     if(block.result){
       const lines=block.result.split('\n'),last=lines.find(l=>/tool uses?/.test(l))||lines.at(-1);
-      const done=/^Done\b/.test(last);
-      card.append(el('div',last.replace(/^Done\s*\((.*)\)$/,'Done · $1'),'subagent-result'+(done?' done':'')));
+      const done=/^Done\b/.test(last),line=resultLine(last.replace(/^Done\s*\((.*)\)$/,'Done · $1'));if(done)line.classList.add('done');card.append(line);
       if(lines.length>1){const d=el('details');d.dataset.key=key;d.open=expanded.has(key);d.append(el('summary','Activity'),el('pre',block.result,'tool-output'));card.append(d);}
     }
     return card;
@@ -130,64 +138,58 @@
     const permission=block.type==='permission';
     const card=el('div',undefined,`dialog ${permission?'permission':'question'}${live?' live':''}`);
     const head=el('div',undefined,'dialog-head');
-    head.append(el('span',permission?'Permission needed':'Question','chip'));
+    head.append(el('span',permission?'Permission':'Question','chip'));
     if(block.title)head.append(el('span',block.title,'dialog-title'));
     card.append(head);
     if(block.detail)card.append(el('pre',block.detail,'dialog-detail'));
     if(block.question)card.append(el('div',block.question,'dialog-question'));
-    const list=el('ol',undefined,'dialog-options');
+    const list=el('ol',undefined,'dialog-options');let keys=0;
     for(const option of block.options||[]){
       const item=el('li',undefined,'dialog-option'+(option.selected?' selected':''));
       // "Type something" and "Chat about this" open a text box the HUD can't fill.
       const pick=live&&!!block.question&&option.n<=9&&!/^(Type something|Chat about this)/i.test(option.label);const row=pick?el('button',undefined,'dialog-answer'):item;
-      if(pick){row.type='button';Object.assign(row.dataset,{n:String(option.n),label:option.label,question:block.question||''});item.append(row);}
-      row.append(el('span',String(option.n),'dialog-n'));
+      if(pick){keys++;row.type='button';Object.assign(row.dataset,{n:String(option.n),label:option.label,question:block.question||''});item.append(row);}
+      row.append(el('kbd',String(option.n),'dialog-n'));
       const text=el('span',undefined,'dialog-label');text.append(el('span',option.label));
       if(option.description)text.append(el('span',option.description,'dialog-desc'));
       row.append(text);list.append(item);
     }
     card.append(list);
-    card.append(el('div',live?'Click an option to answer. The HUD checks that this question is still on screen first.':'This was on screen when the HUD last read the agent.','dialog-note'));
+    card.append(el('div',live?(keys?'Press a number or click to answer. The HUD checks the question is still on screen first.':'Answer this one in Herdr.'):'This was on screen when the HUD last read the agent.','dialog-note'));
     return card;
   }
 
-  // Builds the chat view: one turn per speaker, tools folded into compact rows,
-  // subagents in their own cards, and status lines as quiet footnotes.
+  // Builds the chat view in Claude Code's own shape: your prompts on a ❯ band,
+  // every step on a ⏺ row, tools folded to one line plus their first result,
+  // subagents and live questions in their own cards.
   function conversation(out,data,agent,expanded){
-    const who=PROVIDERS[agent?.agent]||agent?.agent||'Agent';
-    let turn=null,body=null,run=[];
+    let turn=null,run=[];
     const flushRun=()=>{
       if(!run.length)return;
-      if(run.length>=3){
+      if(run.length>=4){
         const key='run'+run[0].key;const group=el('details',undefined,'tool-run');group.dataset.key=key;group.open=expanded.has(key);
-        const names=[...new Set(run.map(r=>r.block.title))].slice(0,4).join(', ');
-        group.append(el('summary',`Used ${run.length} tools · ${names}`));
-        for(const r of run)group.append(toolRow(r.block,r.key,expanded));
-        body.append(group);
-      }else for(const r of run)body.append(toolRow(r.block,r.key,expanded));
+        const names=[...new Set(run.map(r=>r.block.title))].slice(0,4).join(', '),summary=el('summary');
+        summary.append(mark('ok'),el('span',`Used ${run.length} tools`,'tool-name'),el('span',names,'tool-detail'));
+        group.append(summary);for(const r of run)group.append(toolRow(r.block,r.key,expanded));
+        turn.append(group);
+      }else for(const r of run)turn.append(toolRow(r.block,r.key,expanded));
       run=[];
     };
-    const open=kind=>{
-      flushRun();
-      turn=el('section',undefined,'turn '+kind);
-      const head=el('div',undefined,'turn-head');
-      head.append(el('span',kind==='user'?'Y':who[0],'avatar'),el('span',kind==='user'?'You':who,'speaker'));
-      if(kind==='assistant'&&data.model)head.append(el('span',[data.model,data.reasoning].filter(Boolean).join(' '),'model'));
-      body=el('div',undefined,'turn-body');turn.append(head,body);out.append(turn);
-    };
-    data.blocks.forEach((block,index)=>{
+    const open=kind=>{flushRun();turn=el('section',undefined,'turn '+kind);out.append(turn);};
+    const blocks=data.blocks.filter((block,index)=>!(data.activity&&index===data.blocks.length-1&&block.kind==='status'));
+    blocks.forEach((block,index)=>{
       const key=`${block.kind}:${(block.text||'').split('\n')[0]}:${index}`;
-      if(block.kind==='prompt'){open('user');const bubble=el('div',undefined,'bubble');markdown(block.text,bubble);body.append(bubble);if(block.result)body.append(el('div',block.result,'note'));turn=null;return;}
+      if(block.kind==='prompt'){open('user');const row=el('div',undefined,'prompt-row');const bubble=el('div',undefined,'bubble');markdown(block.text,bubble);row.append(el('span','❯','caret'),bubble);turn.append(row);if(block.result)turn.append(resultLine(block.result));turn=null;return;}
       if(!turn||turn.classList.contains('user'))open('assistant');
       if(block.kind==='tool'){run.push({block,key});return;}
       flushRun();
-      if(block.kind==='agent')body.append(agentCard(block,key,expanded));
-      else if(block.kind==='dialog')body.append(dialogCard(block,true));
-      else if(block.kind==='status'){body.append(el('div',block.text,'status-line'));}
-      else if(block.kind==='recap'){const recap=el('div',undefined,'recap');recap.append(el('div','Recap','recap-label'));markdown(block.text,recap);body.append(recap);}
-      else{const reply=el('div',undefined,'reply'+(block.kind==='context'?' context':''));markdown(block.text,reply);body.append(reply);}
+      if(block.kind==='agent')turn.append(agentCard(block,key,expanded));
+      else if(block.kind==='dialog')turn.append(dialogCard(block,true));
+      else if(block.kind==='status'){turn.append(el('div',block.text,'status-line'));}
+      else if(block.kind==='recap'){const recap=el('div',undefined,'recap');recap.append(el('div','※ Recap','recap-label'));markdown(block.text,recap);turn.append(recap);}
+      else{const reply=el('div',undefined,'entry reply'+(block.kind==='context'?' context':''));const body=el('div',undefined,'entry-body');markdown(block.text,body);reply.append(mark(block.kind==='context'?'dim':''),body);turn.append(reply);}
     });
-    flushRun();
+    if(turn)flushRun();
   }
 
   const api={inline,markdown,conversation,boxTable};root.HUDRender=api;

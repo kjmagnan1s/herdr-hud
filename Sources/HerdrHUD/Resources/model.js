@@ -171,8 +171,13 @@
       start('status',line);flush();
     }
     flush();
+    // The live spinner line ("✶ Restyling… (2m 14s · ↓ 8.1k tokens · esc to interrupt)")
+    // is shown in the panel's working strip; the context meter comes from the footer.
+    const last=blocks.at(-1),live=last?.kind==='status'&&/esc to interrupt/i.test(last.text)?/^(.*?)\s*(?:\((.*)\))?\s*$/.exec(last.text):null;
+    const activity=live?{label:live[1].trim(),detail:(live[2]||'').split(/\s*·\s*/).filter(p=>p&&!/esc to interrupt/i.test(p)).join(' · ')}:null;
+    const used=/(\d{1,3})\s*%\s*(?:of\s*([\d.]+\s*[kKmM])\s*(?:tokens)?|(?:context|ctx)\b)/.exec(footerText),context=used?{percent:Math.min(100,Number(used[1])),of:(used[2]||'').replace(/\s+/g,'')}:null;
     if(dialog){delete dialog.start;blocks.push({kind:'dialog',text:[dialog.title,dialog.question].filter(Boolean).join('\n'),...dialog});}
-    return {text:lines.join('\n').trimEnd(),model,reasoning,mode,dialog,blocks};
+    return {text:lines.join('\n').trimEnd(),model,reasoning,mode,dialog,blocks,activity,context};
   }
 
   function parse(text,provider){

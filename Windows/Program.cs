@@ -102,7 +102,9 @@ sealed class Bubble : Form
     // input, blue unread. An amber arc turns around the ring while agents work.
     public int Count; public string Tone = ""; public bool Working;
     float spin; readonly System.Windows.Forms.Timer spinner = new() { Interval = 50 };
-    public static readonly Color Red = Color.FromArgb(255,107,107), Blue = Color.FromArgb(106,169,255), Amber = Color.FromArgb(242,184,75);
+    public static readonly Color Red = Color.FromArgb(255,107,114), Blue = Color.FromArgb(94,169,255), Amber = Color.FromArgb(245,181,68);
+    // Claude's terracotta, matching the panel's accent.
+    public static readonly Color Accent = Color.FromArgb(232,135,95), AccentHi = Color.FromArgb(245,169,134), BadgeRed = Color.FromArgb(255,77,87), BadgeBlue = Color.FromArgb(61,139,255);
     public Rectangle BadgeBounds
     {
         get { float scale = ClientSize.Width / 64f; return new Rectangle((int)Math.Round(41*scale), (int)Math.Round(3*scale), (int)Math.Round(20*scale), (int)Math.Round(20*scale)); }
@@ -132,7 +134,7 @@ sealed class Bubble : Form
     {
         Text = "Herdr HUD H Button"; AccessibleName = "Herdr HUD. Click to open agents; drag to move.";
         FormBorderStyle = FormBorderStyle.None; ShowInTaskbar = false; TopMost = true;
-        Size = new Size(64, 64); BackColor = Color.FromArgb(24, 27, 34); DoubleBuffered = true;
+        Size = new Size(64, 64); BackColor = Color.FromArgb(16, 18, 22); DoubleBuffered = true;
         Cursor = Cursors.Hand;
         spinner.Tick += (_, _) => { spin = (spin + 7.5f) % 360; Invalidate(); };
     }
@@ -151,17 +153,17 @@ sealed class Bubble : Form
             for (int i = 3; i >= 1; i--) { using var glow = new Pen(Color.FromArgb(40, Red), (2+i*2)*scale); g.DrawEllipse(glow, ring); }
             using var red = new Pen(Red, 2*scale); g.DrawEllipse(red, ring);
         }
-        else { using var pen = new Pen(Color.FromArgb(233, 184, 92), 2*scale); g.DrawEllipse(pen, ring); }
+        else { using var pen = new Pen(Accent, 2*scale); g.DrawEllipse(pen, ring); }
         if (Working) { using var arc = new Pen(Amber, 3*scale) { StartCap = LineCap.Round, EndCap = LineCap.Round }; g.DrawArc(arc, ring, spin - 90, 100); }
-        using var font = new Font("Segoe UI", Height * .40f, FontStyle.Bold, GraphicsUnit.Pixel);
-        TextRenderer.DrawText(g, "H", font, ClientRectangle, Color.FromArgb(247, 201, 110), TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+        using var font = new Font("Cascadia Mono", Height * .36f, FontStyle.Bold, GraphicsUnit.Pixel);
+        TextRenderer.DrawText(g, "H", font, ClientRectangle, AccentHi, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
         if (Count > 0)
         {
             var rect = BadgeBounds; bool red = Tone == "blocked";
-            using var fill = new SolidBrush(red ? Red : Blue); g.FillEllipse(fill, rect);
+            using var fill = new SolidBrush(red ? BadgeRed : BadgeBlue); g.FillEllipse(fill, rect);
             using var border = new Pen(BackColor, 2*scale); g.DrawEllipse(border, rect);
             using var badgeFont = new Font("Segoe UI", 10*scale, FontStyle.Bold, GraphicsUnit.Pixel);
-            TextRenderer.DrawText(g, Math.Min(Count, 9).ToString(), badgeFont, rect, red ? Color.FromArgb(42,11,11) : Color.FromArgb(11,26,46), TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+            TextRenderer.DrawText(g, Math.Min(Count, 9).ToString(), badgeFont, rect, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
         }
     }
     protected override void OnMouseDown(MouseEventArgs e) { base.OnMouseDown(e); if (e.Button != MouseButtons.Left) return; pressed = true; dragging = false; down = Cursor.Position; origin = Location; Capture = true; }
@@ -457,9 +459,9 @@ sealed class HUDContext : ApplicationContext
         int Px(int value) => (int)Math.Round(value*scale);
         if (toast is null)
         {
-            toast = new SilentToast { Text = "Herdr HUD Agent Update", FormBorderStyle = FormBorderStyle.None, ShowInTaskbar = false, TopMost = true, BackColor = Color.FromArgb(8,10,20), Size = new Size(Px(330), Px(110)) };
+            toast = new SilentToast { Text = "Herdr HUD Agent Update", FormBorderStyle = FormBorderStyle.None, ShowInTaskbar = false, TopMost = true, BackColor = Color.FromArgb(17,19,24), Size = new Size(Px(340), Px(110)) };
             toastStripe = new Panel { Dock = DockStyle.Left, Width = Px(4) };
-            toastText = new Label { ForeColor = Color.FromArgb(196,192,182), Padding = new Padding(Px(12),Px(12),Px(38),Px(12)), Dock = DockStyle.Fill, Cursor = Cursors.Hand, UseMnemonic = false };
+            toastText = new Label { ForeColor = Color.FromArgb(185,190,199), Padding = new Padding(Px(12),Px(12),Px(38),Px(12)), Dock = DockStyle.Fill, Cursor = Cursors.Hand, UseMnemonic = false };
             toastText.Paint += PaintToastTitle;
             toastText.Click += (_, _) => { string id = toastAgent; OpenPanel(); Emit("select", new() { ["id"] = id }); };
             var close = new Button { Text = "×", Width = Px(28), Height = Px(28), Left = toast.ClientSize.Width-Px(30), Top = Px(2), Anchor = AnchorStyles.Top | AnchorStyles.Right, FlatStyle = FlatStyle.Flat, ForeColor = Color.WhiteSmoke }; close.FlatAppearance.BorderSize = 0; close.Click += (_, _) => HideToast();
@@ -471,7 +473,7 @@ sealed class HUDContext : ApplicationContext
         toastAgent = data.Text("id"); toastSticky = data.Text("tone") == "blocked";
         toastStripe!.BackColor = toastSticky ? Bubble.Red : Bubble.Blue;
         // The title line is painted in the state color; the label holds the preview below it.
-        toastText!.Tag = data.Text("title"); toastText.Text = "\n\n" + data.Text("preview"); toastText.Invalidate();
+        toastText!.Tag = data.Text("title"); toastText.Text = "\n\n" + data.Text("preview") + (data.Text("answers").Length > 0 ? "\nOpen with the shortcut, then press " + data.Text("answers") : ""); toastText.Invalidate();
         toastTimer?.Dispose(); toastTimer = null;
         if (!toastSticky)
         {

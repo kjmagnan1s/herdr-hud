@@ -60,13 +60,20 @@
   \`\`\`
 
 ⏺ Update(Sources/HerdrHUD/Resources/model.js)
-  ⎿  Updated model.js with 96 additions and 2 removals
+  ⎿  Updated Sources/HerdrHUD/Resources/model.js with 3 additions and 2 removals
+       214    function parse(text,provider){
+       215 -    if(provider==='codex')return parseCodex(text);
+       216 -    return {text,blocks:[]};
+       215 +    if(provider==='codex')return parseCodex(text);
+       216 +    if(provider==='claude')return parseClaude(text);
+       217 +    return {text,model:'',blocks:[]};
+       218    }
 
 ⏺ Bash(node --test Tests/*.cjs)
   ⎿  # pass 18
 
-⏺ Read(Sources/HerdrHUD/Resources/style.css)
-  ⎿  Read 1 line
+⏺ Claude transcripts now parse into turns and all 18 tests pass. Next I'm
+  restyling the conversation so replies read as prose and tools fold away.
 
 ✶ Restyling the conversation… (2m 14s · ↓ 8.1k tokens · esc to interrupt)` + footer,
     p2: `❯ audit the deck and fix whatever is wrong with the numbers
