@@ -190,7 +190,7 @@ sealed class AgentPanel : Form
     public AgentPanel()
     {
         Text = "Herdr HUD Agents"; FormBorderStyle = FormBorderStyle.None; ShowInTaskbar = false; TopMost = true;
-        Size = new Size(940, 650); MinimumSize = new Size(640, 430); BackColor = Color.FromArgb(39, 44, 55); Padding = new Padding(5);
+        Size = new Size(960, 700); MinimumSize = new Size(640, 430); BackColor = Color.FromArgb(16, 18, 22); Padding = new Padding(5);
     }
     protected override void OnFormClosing(FormClosingEventArgs e) { if (!AllowQuit && e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; CloseRequested?.Invoke(); } base.OnFormClosing(e); }
     protected override void WndProc(ref Message m)
@@ -242,7 +242,7 @@ sealed class HUDContext : ApplicationContext
         // Sizes are design units; WebView2 renders CSS using the monitor DPI.
         float scale = panel.DeviceDpi / 96f;
         panel.MinimumSize = new Size((int)(640*scale), (int)(430*scale));
-        panel.Size = new Size((int)(940*scale), (int)(650*scale));
+        panel.Size = new Size((int)(960*scale), (int)(700*scale));
         bubble.Size = new Size((int)(64*scale), (int)(64*scale));
         using var bitmap = new Bitmap(32, 32);
         using (var g = Graphics.FromImage(bitmap)) { g.Clear(Color.FromArgb(24,27,34)); using var font = new Font("Segoe UI", 23, FontStyle.Bold, GraphicsUnit.Pixel); g.DrawString("H", font, Brushes.Goldenrod, 2, 0); }

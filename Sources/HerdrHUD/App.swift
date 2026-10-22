@@ -111,7 +111,7 @@ final class HUDApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKN
         NSApp.setActivationPolicy(.accessory)
         try? FileManager.default.createDirectory(at:support,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])
         visible = defaults.object(forKey:"visible") == nil || defaults.bool(forKey:"visible")
-        panel = OverlayPanel(contentRect:NSRect(x:100,y:100,width:940,height:650), styleMask:[.borderless,.nonactivatingPanel,.resizable], backing:.buffered,defer:false)
+        panel = OverlayPanel(contentRect:NSRect(x:100,y:100,width:960,height:700), styleMask:[.borderless,.nonactivatingPanel,.resizable], backing:.buffered,defer:false)
         configure(panel); panel.title = "Herdr HUD Agents"; panel.minSize = NSSize(width:640,height:430)
         let config = WKWebViewConfiguration()
         config.userContentController.add(self,name:"hud")
@@ -364,10 +364,10 @@ final class HUDApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKN
         if toast == nil && data["update"] as? Bool == true { return }
         let view: ToastView
         if let current = toast?.contentView as? ToastView { view = current } else {
-            let window = NSPanel(contentRect:NSRect(x:0,y:0,width:340,height:92),styleMask:[.borderless,.nonactivatingPanel],backing:.buffered,defer:false)
+            let window = NSPanel(contentRect:NSRect(x:0,y:0,width:360,height:96),styleMask:[.borderless,.nonactivatingPanel],backing:.buffered,defer:false)
             configure(window); window.title = "Herdr HUD Alert"; window.hasShadow = true
             window.level = NSWindow.Level(rawValue:bubble.level.rawValue+1)
-            view = ToastView(frame:NSRect(x:0,y:0,width:340,height:92)); view.app = self; window.contentView = view
+            view = ToastView(frame:NSRect(x:0,y:0,width:360,height:96)); view.app = self; window.contentView = view
             toast = window; positionToast(); window.orderFrontRegardless()
         }
         view.agentID = data["id"] as? String ?? ""; view.sticky = data["tone"] as? String == "blocked"
@@ -453,20 +453,37 @@ final class ToastView: NSView {
         let line = NSMutableParagraphStyle(); line.lineBreakMode = .byTruncatingTail
         let kicker = (sticky ? "NEEDS YOU" : "FINISHED") as NSString
         kicker.draw(in:NSRect(x:62,y:top-26,width:220,height:14),withAttributes:[.font:NSFont.systemFont(ofSize:10,weight:.bold),.kern:0.8,.foregroundColor:sticky ? NSColor(srgbRed:1,green:0.61,blue:0.63,alpha:1) : NSColor(srgbRed:0.61,green:0.78,blue:1,alpha:1),.paragraphStyle:line])
-        (title as NSString).draw(in:NSRect(x:62,y:top-46,width:250,height:19),withAttributes:[.font:NSFont.systemFont(ofSize:14,weight:.semibold),.foregroundColor:NSColor(white:0.95,alpha:1),.paragraphStyle:line])
-        (detail as NSString).draw(in:NSRect(x:62,y:top-65,width:264,height:17),withAttributes:[.font:NSFont.systemFont(ofSize:12.5),.foregroundColor:NSColor(srgbRed:0.73,green:0.75,blue:0.78,alpha:1),.paragraphStyle:line])
+        (title as NSString).draw(in:NSRect(x:62,y:top-46,width:270,height:19),withAttributes:[.font:NSFont.systemFont(ofSize:14,weight:.semibold),.foregroundColor:NSColor(white:0.95,alpha:1),.paragraphStyle:line])
+        (detail as NSString).draw(in:NSRect(x:62,y:top-66,width:284,height:17),withAttributes:[.font:NSFont.systemFont(ofSize:12.5),.foregroundColor:NSColor(srgbRed:0.73,green:0.75,blue:0.78,alpha:1),.paragraphStyle:line])
         let mode = UserDefaults.standard.integer(forKey:"shortcutMode"), keys = mode == 0 ? "⌘⌥H" : mode == 1 ? "⌃⌥H" : ""
         let hintFont = NSFont.systemFont(ofSize:12,weight:.medium), hintColor = NSColor(srgbRed:0.70,green:0.73,blue:0.77,alpha:1)
+        // Keycaps for the shortcut and each answer number: "⌘⌥H then 1 Yes 2 Always 3 No".
         var x: CGFloat = 62
-        if !keys.isEmpty {
-            let keyAttrs: [NSAttributedString.Key:Any] = [.font:NSFont.systemFont(ofSize:10,weight:.semibold),.foregroundColor:NSColor(white:0.82,alpha:1)]
-            let size = (keys as NSString).size(withAttributes:keyAttrs), cap = NSRect(x:x,y:9,width:size.width+9,height:16)
-            NSColor(white:1,alpha:0.06).setFill(); let capPath = NSBezierPath(roundedRect:cap,xRadius:4,yRadius:4); capPath.fill()
-            NSColor(white:1,alpha:0.18).setStroke(); capPath.lineWidth = 1; capPath.stroke()
-            (keys as NSString).draw(at:NSPoint(x:cap.minX+4.5,y:cap.midY-size.height/2),withAttributes:keyAttrs); x = cap.maxX+6
+        func cap(_ text: String) {
+            let keyAttrs: [NSAttributedString.Key:Any] = [.font:NSFont.systemFont(ofSize:11,weight:.bold),.foregroundColor:NSColor(white:0.92,alpha:1)]
+            let size = (text as NSString).size(withAttributes:keyAttrs), rect = NSRect(x:x,y:8,width:max(18,size.width+10),height:18)
+            NSColor(white:1,alpha:0.08).setFill(); let path = NSBezierPath(roundedRect:rect,xRadius:5,yRadius:5); path.fill()
+            NSColor(white:1,alpha:0.22).setStroke(); path.lineWidth = 1; path.stroke()
+            (text as NSString).draw(at:NSPoint(x:rect.midX-size.width/2,y:rect.midY-size.height/2),withAttributes:keyAttrs); x = rect.maxX+5
         }
-        let hint = keys.isEmpty ? "Click to open" : answers.isEmpty ? "open" : "then " + answers
-        (hint as NSString).draw(in:NSRect(x:x,y:9,width:bounds.width-x-12,height:16),withAttributes:[.font:hintFont,.foregroundColor:hintColor,.paragraphStyle:line])
+        func word(_ text: String, _ color: NSColor) {
+            let attrs: [NSAttributedString.Key:Any] = [.font:hintFont,.foregroundColor:color]
+            guard x < bounds.width-20 else { return }
+            (text as NSString).draw(at:NSPoint(x:x,y:9),withAttributes:attrs); x += (text as NSString).size(withAttributes:attrs).width+9
+        }
+        if keys.isEmpty { word("Click to open",hintColor) }
+        else {
+            cap(keys)
+            if answers.isEmpty { word("open",hintColor) }
+            else {
+                word("then",hintColor)
+                for answer in answers.components(separatedBy:" · ") {
+                    let parts = answer.split(separator:" ",maxSplits:1).map(String.init)
+                    guard let number = parts.first else { continue }
+                    cap(number); word(parts.count > 1 ? parts[1] : "",NSColor(white:0.9,alpha:1))
+                }
+            }
+        }
         ("×" as NSString).draw(at:NSPoint(x:bounds.width-24,y:top-28),withAttributes:[.font:NSFont.systemFont(ofSize:17),.foregroundColor:hintColor])
     }
 }

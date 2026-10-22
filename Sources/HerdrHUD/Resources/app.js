@@ -66,7 +66,7 @@ function renderRoster(){
       const meta=[a.workspace_label||a.workspace_id,a.agent||'agent'];if(metadata.mode)meta.push(metadata.mode==='Ask'?'Asks permission':`${metadata.mode} mode`);if(multiMachine)meta.push(a.machine_label);
       const icon=el('span',initials(name(a)),'agent-icon '+state);icon.setAttribute('aria-hidden','true');icon.style.setProperty?.('--hue',hue(name(a)));icon.append(el('span',undefined,'dot '+state));
       const when=changedAt.has(a.id)?HUDModel.ago(changedAt.get(a.id),Date.now()):'';
-      button.append(icon,el('span',name(a),'agent-name'),el('span',when,'agent-time'),el('span',[a.workspace_label||a.workspace_id,a.agent,multiMachine&&a.machine_label].filter(Boolean).join(' · '),'agent-meta'),el('span',index<10?String(index):'','agent-key'),el('span',initials(name(a)),'agent-abbr'));
+      button.append(icon,el('span',name(a),'agent-name'),el('span',when,'agent-time'),el('span',[a.workspace_label||a.workspace_id,a.agent,multiMachine&&a.machine_label].filter(Boolean).join(' · '),'agent-meta'),el('span',index<10?`${modKey==='⌥'?'⌥':'Alt '}${index}`:'','agent-key'),el('span',initials(name(a)),'agent-abbr'));
       if(preview){const ask=el('span',undefined,'agent-ask');ask.append(el('span',preview,'ask-text'));button.append(ask);}
       button.setAttribute('aria-label',`${name(a)}, ${stateLabel(a)}`);
       button.title=[name(a)+' · '+stateLabel(a),meta.join(' · '),metadata.model&&`${metadata.model} ${metadata.reasoning}`.trim(),index<10&&`${modKey} ${index} to open`].filter(Boolean).join('\n');button.onclick=()=>select(a.id);
@@ -161,7 +161,7 @@ function renderOutput(){
   // On open, start at your latest prompt when the exchange since then fits.
   const latest=first&&!terminal?[...out.querySelectorAll('.turn.user')].at(-1):null;
   out.scrollTop=latest&&out.scrollHeight-latest.offsetTop<=out.clientHeight?latest.offsetTop-16:first||wasBottom?out.scrollHeight:scroll;
-  out.classList.toggle('scrolled',out.scrollTop>4);
+  scrolled();
 }
 function read(){if(!opened||reading||!active()?.online)return;reading=true;wantSelected=false;request('output',{id:selected});}
 // While the panel is open and idle, load agents the HUD has not read yet, one at
@@ -242,7 +242,9 @@ $('prompt').onkeydown=e=>{
     input.dispatchEvent(new Event('input',{bubbles:true}));
   }else if(!e.repeat){send();}
 };
-$('output').onscroll=()=>$('output').classList.toggle('scrolled',$('output').scrollTop>4);
+function scrolled(){const out=$('output'),on=out.scrollTop>4;out.classList.toggle('scrolled',on);$('earlier').hidden=!on||!out.querySelector('.turn.user');}
+$('output').onscroll=scrolled;
+$('earlier').onclick=()=>{const out=$('output'),latest=[...out.querySelectorAll('.turn.user')].at(-1);if(latest)out.scrollTo({top:latest.offsetTop-16,behavior:'smooth'});};
 if(typeof ResizeObserver==='function')new ResizeObserver(()=>fitTerminal()).observe($('output'));
 for(const view of ['chat','terminal'])$(view).onclick=()=>{mode=view;request('preferences',{mode});lastRendered='';renderOutput();};
 const divider=$('divider');divider.onpointerdown=e=>{divider.setPointerCapture(e.pointerId);};divider.onpointermove=e=>{if(divider.hasPointerCapture(e.pointerId)){const aside=document.querySelector('aside');aside.style.width=Math.min(Math.max(e.clientX-aside.getBoundingClientRect().left,56),innerWidth*.42)+'px';}};
