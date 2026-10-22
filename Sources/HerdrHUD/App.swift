@@ -456,7 +456,7 @@ final class ToastView: NSView {
         (title as NSString).draw(in:NSRect(x:62,y:top-46,width:250,height:19),withAttributes:[.font:NSFont.systemFont(ofSize:14,weight:.semibold),.foregroundColor:NSColor(white:0.95,alpha:1),.paragraphStyle:line])
         (detail as NSString).draw(in:NSRect(x:62,y:top-65,width:264,height:17),withAttributes:[.font:NSFont.systemFont(ofSize:12.5),.foregroundColor:NSColor(srgbRed:0.73,green:0.75,blue:0.78,alpha:1),.paragraphStyle:line])
         let mode = UserDefaults.standard.integer(forKey:"shortcutMode"), keys = mode == 0 ? "⌘⌥H" : mode == 1 ? "⌃⌥H" : ""
-        let hintFont = NSFont.systemFont(ofSize:11), hintColor = NSColor(srgbRed:0.49,green:0.52,blue:0.56,alpha:1)
+        let hintFont = NSFont.systemFont(ofSize:12,weight:.medium), hintColor = NSColor(srgbRed:0.70,green:0.73,blue:0.77,alpha:1)
         var x: CGFloat = 62
         if !keys.isEmpty {
             let keyAttrs: [NSAttributedString.Key:Any] = [.font:NSFont.systemFont(ofSize:10,weight:.semibold),.foregroundColor:NSColor(white:0.82,alpha:1)]

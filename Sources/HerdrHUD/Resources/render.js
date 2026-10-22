@@ -179,8 +179,10 @@
     const blocks=data.blocks.filter((block,index)=>!(data.activity&&index===data.blocks.length-1&&block.kind==='status'));
     blocks.forEach((block,index)=>{
       const key=`${block.kind}:${(block.text||'').split('\n')[0]}:${index}`;
-      if(block.kind==='prompt'){open('user');const row=el('div',undefined,'prompt-row');const bubble=el('div',undefined,'bubble');markdown(block.text,bubble);row.append(el('span','❯','caret'),bubble);turn.append(row);if(block.result)turn.append(resultLine(block.result));turn=null;return;}
-      if(!turn||turn.classList.contains('user'))open('assistant');
+      // Each exchange is one section; your prompt sticks to the top while you
+      // scroll through what the agent did with it.
+      if(block.kind==='prompt'){open('user');const row=el('div',undefined,'prompt-row');const bubble=el('div',undefined,'bubble');markdown(block.text,bubble);row.append(el('span','❯','caret'),bubble);turn.append(row);if(block.result)turn.append(resultLine(block.result));return;}
+      if(!turn)open('assistant');
       if(block.kind==='tool'){run.push({block,key});return;}
       flushRun();
       if(block.kind==='agent')turn.append(agentCard(block,key,expanded));
