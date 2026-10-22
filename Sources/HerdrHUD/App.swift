@@ -445,14 +445,14 @@ final class ToastView: NSView {
         let shape = NSBezierPath(roundedRect:bounds.insetBy(dx:0.5,dy:0.5),xRadius:12,yRadius:12)
         NSColor(srgbRed:0.067,green:0.075,blue:0.094,alpha:0.97).setFill(); shape.fill()
         NSColor(white:1,alpha:0.12).setStroke(); shape.lineWidth = 1; shape.stroke()
-        let tone = sticky ? Tone.red : Tone.blue, top = bounds.height
+        let tone = danger ? Tone.amber : sticky ? Tone.red : Tone.blue, top = bounds.height
         let icon = NSRect(x:14,y:top-52,width:38,height:38), plate = NSBezierPath(roundedRect:icon,xRadius:10,yRadius:10)
         tone.withAlphaComponent(0.2).setFill(); plate.fill(); tone.withAlphaComponent(0.5).setStroke(); plate.lineWidth = 1; plate.stroke()
-        let mark = (sticky ? "!" : "✓") as NSString, markAttrs: [NSAttributedString.Key:Any] = [.font:NSFont.monospacedSystemFont(ofSize:14,weight:.bold),.foregroundColor:sticky ? Tone.redInk : Tone.blueInk]
+        let mark = (danger ? "⚠" : sticky ? "!" : "✓") as NSString, markAttrs: [NSAttributedString.Key:Any] = [.font:NSFont.monospacedSystemFont(ofSize:14,weight:.bold),.foregroundColor:danger ? NSColor(srgbRed:1,green:0.80,blue:0.55,alpha:1) : sticky ? Tone.redInk : Tone.blueInk]
         let markSize = mark.size(withAttributes:markAttrs); mark.draw(at:NSPoint(x:icon.midX-markSize.width/2,y:icon.midY-markSize.height/2),withAttributes:markAttrs)
         let line = NSMutableParagraphStyle(); line.lineBreakMode = .byTruncatingTail
-        let kicker = (sticky ? (waiting > 1 ? "NEEDS YOU · \(waiting) WAITING" : "NEEDS YOU") : "FINISHED") as NSString
-        kicker.draw(in:NSRect(x:64,y:top-27,width:220,height:14),withAttributes:[.font:NSFont.systemFont(ofSize:10.5,weight:.bold),.kern:0.8,.foregroundColor:sticky ? NSColor(srgbRed:1,green:0.61,blue:0.63,alpha:1) : NSColor(srgbRed:0.61,green:0.78,blue:1,alpha:1),.paragraphStyle:line])
+        let kicker = (sticky ? (danger ? "DESTRUCTIVE" : "NEEDS YOU") + (waiting > 1 ? " · \(waiting) WAITING" : "") : "FINISHED") as NSString
+        kicker.draw(in:NSRect(x:64,y:top-27,width:220,height:14),withAttributes:[.font:NSFont.systemFont(ofSize:10.5,weight:.bold),.kern:0.8,.foregroundColor:danger ? NSColor(srgbRed:1,green:0.80,blue:0.55,alpha:1) : sticky ? NSColor(srgbRed:1,green:0.61,blue:0.63,alpha:1) : NSColor(srgbRed:0.61,green:0.78,blue:1,alpha:1),.paragraphStyle:line])
         (title as NSString).draw(in:NSRect(x:64,y:top-49,width:280,height:20),withAttributes:[.font:NSFont.systemFont(ofSize:15,weight:.semibold),.foregroundColor:NSColor(white:0.95,alpha:1),.paragraphStyle:line])
         // A destructive command reads in amber, and Yes is no longer the highlighted key.
         (detail as NSString).draw(in:NSRect(x:64,y:top-71,width:300,height:19),withAttributes:[.font:NSFont.systemFont(ofSize:13.5,weight:danger ? .medium : .regular),.foregroundColor:danger ? NSColor(srgbRed:1,green:0.80,blue:0.55,alpha:1) : NSColor(srgbRed:0.86,green:0.87,blue:0.89,alpha:1),.paragraphStyle:line])

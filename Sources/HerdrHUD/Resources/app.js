@@ -70,7 +70,7 @@ function renderRoster(){
       if(preview){const ask=el('span',undefined,'agent-ask');ask.append(el('span',preview,'ask-text'));button.append(ask);}
       button.setAttribute('aria-label',`${name(a)}, ${stateLabel(a)}`);
       button.title=[name(a)+' · '+stateLabel(a),meta.join(' · '),metadata.model&&`${metadata.model} ${metadata.reasoning}`.trim(),index<10&&`${modKey} ${index} to open`].filter(Boolean).join('\n');button.onclick=()=>select(a.id);
-      const quick=quickAnswers(a,metadata);if(quick){const wrap=el('div',undefined,'agent-wrap '+state);wrap.append(button,quick);nodes.push(wrap);}else nodes.push(button);
+      const quick=quickAnswers(a,metadata);if(quick){const wrap=el('div',undefined,'agent-wrap '+state+(HUDModel.risky(metadata.dialog)?' danger':''));wrap.append(button,quick);nodes.push(wrap);}else nodes.push(button);
     }
   }
   roster.replaceChildren(...nodes);renderSummary();

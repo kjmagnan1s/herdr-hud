@@ -351,7 +351,9 @@ aside {
 .quick-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .quick-answer.primary { color: #06150d; background: linear-gradient(#5fe0a2, #36bf7e); border-color: rgba(0, 0, 0, .25); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35), 0 0 14px rgba(69, 208, 142, .28), var(--drop); }
 .quick-answer.primary kbd { color: #06150d; background: rgba(255, 255, 255, .32); border-color: rgba(0, 0, 0, .18); box-shadow: none; }
-.agent-wrap:has(.quick.danger) .ask-text { color: #ffd9a8; }
+.agent-wrap.blocked.danger { border-color: rgba(245, 181, 68, .55); background: linear-gradient(160deg, rgba(245, 181, 68, .14), rgba(255, 107, 114, .05) 60%); }
+.agent-wrap.danger .agent-ask { border-color: rgba(245, 181, 68, .45); background: rgba(245, 181, 68, .1); }
+.agent-wrap.danger .ask-text { color: #ffdcae; font-weight: 600; }
 .quick-answer.caution { color: #ffd9a8; border-color: rgba(245, 181, 68, .55); background: rgba(245, 181, 68, .12); }
 .quick-answer.caution kbd { color: #ffd9a8; border-color: rgba(245, 181, 68, .45); background: rgba(245, 181, 68, .14); }
 .quick-answer.deny:hover { border-color: var(--blocked-line); background: var(--blocked-soft); }
@@ -583,13 +585,13 @@ details > summary::-webkit-details-marker { display: none; }
   border: 1px solid var(--line);
   background: rgba(0, 0, 0, .34);
   box-shadow: inset 0 1px 3px rgba(0, 0, 0, .3), 0 1px 0 rgba(255, 255, 255, .04);
-  font: 12.5px/1.6 var(--mono);
+  font: 13px/1.65 var(--mono);
   color: var(--text-soft);
 }
 
 /* Inline diffs */
 .tool-output.diff { padding: 8px 0; white-space: pre; overflow-x: auto; }
-.diff-line { display: block; padding: 0 12px; color: var(--text-muted); }
+.diff-line { display: block; padding: 0 12px; color: var(--text-soft); }
 .diff-line.add { color: #c4f6d8; background: rgba(69, 208, 142, .14); box-shadow: inset 3px 0 0 var(--done); }
 .diff-line.del { color: #ffd0d3; background: rgba(255, 107, 114, .14); box-shadow: inset 3px 0 0 var(--blocked); }
 .tool-detail { margin-left: -8px; }
