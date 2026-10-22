@@ -19,3 +19,12 @@ func notificationFrame(bubble: NSRect, size: NSSize, visibleFrame: NSRect, gap: 
         return max(0,a.width)*max(0,a.height) < max(0,b.width)*max(0,b.height)
     })!
 }
+
+// The agent strip sits beside the H on the side facing the screen's center,
+// vertically centered on it, and never leaves the visible frame.
+func stripFrame(bubble: NSRect, size: NSSize, visibleFrame: NSRect, gap: CGFloat = 8) -> NSRect {
+    let width = min(size.width,visibleFrame.width), height = min(size.height,visibleFrame.height)
+    let x = bubble.midX > visibleFrame.midX ? bubble.minX-gap-width : bubble.maxX+gap
+    let y = bubble.midY-height/2
+    return NSRect(x:min(max(x,visibleFrame.minX),visibleFrame.maxX-width),y:min(max(y,visibleFrame.minY),visibleFrame.maxY-height),width:width,height:height)
+}

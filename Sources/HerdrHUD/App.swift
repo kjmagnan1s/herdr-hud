@@ -108,6 +108,7 @@ final class HUDApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKN
     var lastSnapshot: Row = [:], readBusy = false, selected = ""
     var promptIDs = Set<String>(), hotkeyWarning = ""
     var toast: NSPanel?, toastTimer: Timer?, toastHover = false
+    var strip: NSPanel?, stripView: StripView?, stripAgents: [Row] = [], stripLabel = ""
     var shortcuts: [NSMenuItem] = []
     static let channel = Notification.Name("org.herdr.community.hud.control")
     var support: URL { FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("Herdr HUD") }
@@ -168,6 +169,7 @@ final class HUDApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKN
         let menu = NSMenu()
         menu.addItem(menuItem("Open / close agents",#selector(togglePanel)))
         menu.addItem(menuItem("Show / hide H button",#selector(toggleVisibility)))
+        let stripItem = menuItem("Show agent strip beside H",#selector(toggleStrip(_:))); stripItem.state = defaults.bool(forKey:"agentStrip") ? .on : .off; menu.addItem(stripItem)
         menu.addItem(.separator())
         let root = NSMenuItem(title:"Keyboard shortcuts",action:nil,keyEquivalent:""), submenu = NSMenu()
         for (index,title) in ["⌘⌥H panel · ⌘⌥⇧H hide", "⌃⌥H panel · ⌃⌥⇧H hide", "Shortcuts off"].enumerated() {
@@ -179,6 +181,26 @@ final class HUDApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKN
         menu.addItem(menuItem("About Herdr HUD",#selector(about)))
         menu.addItem(.separator()); menu.addItem(menuItem("Quit Herdr HUD",#selector(quit)))
         status.menu = menu
+    }
+    @objc func toggleStrip(_ item: NSMenuItem) {
+        defaults.set(!defaults.bool(forKey:"agentStrip"),forKey:"agentStrip"); item.state = defaults.bool(forKey:"agentStrip") ? .on : .off; updateStrip()
+    }
+    // Off by default. Like a voice overlay's member row: one tile per agent beside
+    // the H while the panel is closed, so state reads at a glance during play.
+    func updateStrip() {
+        guard defaults.bool(forKey:"agentStrip"), visible, !panelOpen, !stripAgents.isEmpty, bubble != nil else { strip?.orderOut(nil); return }
+        if strip == nil {
+            let window = NSPanel(contentRect:NSRect(x:0,y:0,width:120,height:44),styleMask:[.borderless,.nonactivatingPanel],backing:.buffered,defer:false)
+            configure(window); window.title = "Herdr HUD Agent Strip"; window.level = bubble.level
+            let view = StripView(frame:window.contentView!.bounds); view.app = self; view.autoresizingMask = [.width,.height]
+            window.contentView = view; strip = window; stripView = view
+        }
+        stripView?.agents = stripAgents; stripView?.label = stripLabel
+        positionStrip(); strip?.orderFrontRegardless(); stripView?.needsDisplay = true
+    }
+    func positionStrip() {
+        guard let strip = strip, let view = stripView, bubble != nil, !NSScreen.screens.isEmpty else { return }
+        strip.setFrame(stripFrame(bubble:bubble.frame,size:NSSize(width:view.layout().width,height:44),visibleFrame:screenForBubble().visibleFrame),display:true)
     }
     @objc func changeShortcut(_ item: NSMenuItem) { defaults.set(item.tag,forKey:"shortcutMode"); registerHotkeys() }
     func registerHotkeys() {
@@ -217,15 +239,15 @@ final class HUDApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKN
     @objc func toggleVisibility() {
         visible.toggle(); defaults.set(visible,forKey:"visible")
         if visible { bubble.orderFrontRegardless(); refresh() } else { closePanel(); bubble.orderOut(nil); hideToast(); lastEmitted = ""; emit("resetBaseline",[:]) }
-        diagnostics()
+        updateStrip(); diagnostics()
     }
     @objc func togglePanel() { if panelOpen { closePanel() } else { openPanel() } }
     func openPanel() {
         visible = true; defaults.set(true,forKey:"visible"); panelOpen = true
         positionPanel(); bubble.orderFrontRegardless(); panel.makeKeyAndOrderFront(nil)
-        panel.makeFirstResponder(web); hideToast(); emit("visibility",["open":true]); refresh(); diagnostics()
+        panel.makeFirstResponder(web); hideToast(); updateStrip(); emit("visibility",["open":true]); refresh(); diagnostics()
     }
-    func closePanel() { panelOpen = false; panel.orderOut(nil); emit("visibility",["open":false]); diagnostics() }
+    func closePanel() { panelOpen = false; panel.orderOut(nil); updateStrip(); emit("visibility",["open":false]); diagnostics() }
     func screenForBubble() -> NSScreen { NSScreen.screens.first(where: { $0.frame.contains(NSPoint(x:bubble.frame.midX,y:bubble.frame.midY)) }) ?? NSScreen.screens.first! }
     func screenKey(_ screen: NSScreen) -> String { String((screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0) }
     func restorePosition() {
@@ -240,7 +262,7 @@ final class HUDApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKN
         bubble.setFrameOrigin(NSPoint(x:frame.minX+point.x,y:frame.minY+point.y)); positionPanel(); diagnostics()
     }
     func positionPanel() {
-        defer { positionToast() }
+        defer { positionToast(); positionStrip() }
         guard bubble != nil, panel != nil, !NSScreen.screens.isEmpty else { return }
         let frame = screenForBubble().visibleFrame
         let size = NSSize(width:min(panel.frame.width,frame.width-24),height:min(panel.frame.height,frame.height-24))
@@ -250,7 +272,7 @@ final class HUDApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKN
         panel.setFrame(NSRect(x:min(max(x,frame.minX+12),frame.maxX-size.width-12),y:min(max(y,frame.minY+12),frame.maxY-size.height-12),width:size.width,height:size.height),display:true)
     }
     @objc func screensChanged() { restorePosition(); positionPanel() }
-    @objc func spaceChanged() { if visible { bubble.orderFrontRegardless(); if panelOpen { panel.orderFrontRegardless() }; toast?.orderFrontRegardless() } }
+    @objc func spaceChanged() { if visible { bubble.orderFrontRegardless(); if panelOpen { panel.orderFrontRegardless() } else if strip?.isVisible == true { strip?.orderFrontRegardless() }; toast?.orderFrontRegardless() } }
     // Manual refresh: every machine, ignoring the offline backoff.
     @objc func refresh() { check(nil, force: true) }
     func tick() {
@@ -322,6 +344,7 @@ final class HUDApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKN
             if let width = data["rosterWidth"] as? Double, width >= 56 && width <= 600 { defaults.set(width,forKey:"rosterWidth") }
             if let mode = data["mode"] as? String, ["chat","terminal"].contains(mode) { defaults.set(mode,forKey:"viewMode") }
         case "badge": bubbleView.count = data["count"] as? Int ?? 0; bubbleView.tone = data["tone"] as? String ?? ""; bubbleView.working = (data["working"] as? Int ?? 0) > 0
+        case "strip": stripAgents = Array((data["agents"] as? [Row] ?? []).prefix(8)); stripLabel = String((data["label"] as? String ?? "").prefix(40)); updateStrip()
         case "alertPreview":
             if !panelOpen && visible, let id = data["id"] as? String {
                 reads.async {
@@ -492,5 +515,61 @@ final class ToastView: NSView {
             }
         }
         ("×" as NSString).draw(at:NSPoint(x:bounds.width-24,y:top-28),withAttributes:[.font:NSFont.systemFont(ofSize:17),.foregroundColor:hintColor])
+    }
+}
+final class StripView: NSView {
+    weak var app: HUDApp?
+    var agents: [Row] = [], label = ""
+    var tiles: [(id: String, rect: NSRect)] = []
+    static let labelAttrs: [NSAttributedString.Key:Any] = [.font:NSFont.systemFont(ofSize:12.5,weight:.semibold),.foregroundColor:NSColor(srgbRed:1,green:0.70,blue:0.72,alpha:1)]
+    override func acceptsFirstMouse(for event:NSEvent?) -> Bool { true }
+    static func rank(_ state: String) -> Int { ["blocked":0,"unread":1,"working":2][state] ?? 3 }
+    // Left to right: the "needs you" label, then tiles with a hairline between state groups.
+    func layout() -> (width: CGFloat, label: CGFloat, tiles: [CGFloat], separators: [CGFloat]) {
+        var x: CGFloat = 10, labelX: CGFloat = -1, xs: [CGFloat] = [], seps: [CGFloat] = [], last = -1
+        if !label.isEmpty { labelX = x; x += ceil((label as NSString).size(withAttributes:Self.labelAttrs).width)+10 }
+        for agent in agents {
+            let rank = Self.rank(agent["state"] as? String ?? "")
+            if last >= 0 && rank != last { seps.append(x); x += 9 }
+            xs.append(x); x += 36; last = rank
+        }
+        return (x-8+10, labelX, xs, seps)
+    }
+    static func hsl(_ h: Double, _ s: Double, _ l: Double) -> NSColor {
+        let v = l+s*min(l,1-l), sv = v == 0 ? 0 : 2*(1-l/v)
+        return NSColor(hue:CGFloat(h.truncatingRemainder(dividingBy:360)/360),saturation:CGFloat(sv),brightness:CGFloat(v),alpha:1)
+    }
+    override func draw(_ dirtyRect: NSRect) {
+        let shape = NSBezierPath(roundedRect:bounds.insetBy(dx:0.5,dy:0.5),xRadius:14,yRadius:14)
+        NSColor(srgbRed:0.067,green:0.075,blue:0.094,alpha:0.9).setFill(); shape.fill()
+        NSColor(white:1,alpha:0.1).setStroke(); shape.lineWidth = 1; shape.stroke()
+        let plan = layout(), mid = bounds.midY
+        if plan.label >= 0 {
+            let size = (label as NSString).size(withAttributes:Self.labelAttrs)
+            (label as NSString).draw(at:NSPoint(x:plan.label,y:mid-size.height/2),withAttributes:Self.labelAttrs)
+        }
+        for x in plan.separators { NSColor(white:1,alpha:0.12).setFill(); NSRect(x:x,y:mid-11,width:1,height:22).fill() }
+        tiles = []
+        for (agent, x) in zip(agents, plan.tiles) {
+            let state = agent["state"] as? String ?? "", rect = NSRect(x:x,y:mid-14,width:28,height:28), hue = agent["hue"] as? Double ?? 0
+            tiles.append((agent["id"] as? String ?? "", rect))
+            let ring: NSColor? = state == "blocked" ? Tone.red : state == "working" ? Tone.amber.withAlphaComponent(0.85) : state == "unread" ? Tone.blue : nil
+            if let ring = ring { ring.setStroke(); let outer = NSBezierPath(roundedRect:rect.insetBy(dx:-2.75,dy:-2.75),xRadius:10,yRadius:10); outer.lineWidth = 1.5; outer.stroke() }
+            let quiet = ["idle","done","offline"].contains(state), path = NSBezierPath(roundedRect:rect,xRadius:8,yRadius:8)
+            let top = state == "offline" ? NSColor(white:0.45,alpha:1) : Self.hsl(hue,0.60,0.56), bottom = state == "offline" ? NSColor(white:0.25,alpha:1) : Self.hsl(hue+24,0.54,0.36)
+            NSGraphicsContext.saveGraphicsState(); if quiet { NSGraphicsContext.current?.cgContext.setAlpha(0.55) }
+            NSGradient(starting:top,ending:bottom)?.draw(in:path,angle:-70)
+            NSColor(white:1,alpha:0.16).setStroke(); path.lineWidth = 1; path.stroke()
+            let text = (agent["initials"] as? String ?? "?") as NSString, attrs: [NSAttributedString.Key:Any] = [.font:NSFont.systemFont(ofSize:10.5,weight:.heavy),.foregroundColor:NSColor.white]
+            let size = text.size(withAttributes:attrs); text.draw(at:NSPoint(x:rect.midX-size.width/2,y:rect.midY-size.height/2),withAttributes:attrs)
+            NSGraphicsContext.restoreGraphicsState()
+        }
+        let names = agents.map { "\($0["name"] as? String ?? "agent") \($0["state"] as? String ?? "")" }.joined(separator:", ")
+        setAccessibilityRole(.group); setAccessibilityLabel((label.isEmpty ? "" : label + ". ") + "Agents: " + names + ". Click one to open it.")
+    }
+    override func mouseUp(with event: NSEvent) {
+        let point = convert(event.locationInWindow,from:nil)
+        let id = tiles.first(where:{ $0.rect.insetBy(dx:-4,dy:-8).contains(point) })?.id ?? tiles.first?.id ?? ""
+        app?.openPanel(); if !id.isEmpty { app?.emit("select",["id":id]) }
     }
 }

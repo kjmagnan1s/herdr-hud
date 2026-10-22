@@ -24,4 +24,13 @@ final class PlacementTests: XCTestCase {
         XCTAssertEqual(below.maxY,top.minY-10)
         XCTAssertFalse(below.intersects(top))
     }
+    func testStripFacesScreenCenterAndStaysOnScreen() {
+        let screen = NSRect(x:0,y:0,width:1000,height:800), size = NSSize(width:260,height:44)
+        let right = NSRect(x:930,y:400,width:64,height:64)
+        let left = stripFrame(bubble:right,size:size,visibleFrame:screen)
+        XCTAssertEqual(left.maxX,right.minX-8); XCTAssertEqual(left.midY,right.midY)
+        let edge = NSRect(x:6,y:0,width:64,height:64)
+        let beside = stripFrame(bubble:edge,size:size,visibleFrame:screen)
+        XCTAssertEqual(beside.minX,edge.maxX+8); XCTAssertTrue(screen.contains(beside)); XCTAssertFalse(beside.intersects(edge))
+    }
 }

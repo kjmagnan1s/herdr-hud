@@ -23,7 +23,16 @@ function notice(text){$('notice').hidden=!text;$('notice').textContent=text;}
 // otherwise blue counts unread results. An amber arc turns while any agent works.
 function badge(){
   const blocked=agents.filter(a=>a.online&&status(a)==='blocked').length,fresh=agents.filter(a=>unread.has(a.id)&&status(a)!=='blocked').length;
+  strip(blocked);
   post({op:'badge',count:blocked||fresh,tone:blocked?'blocked':fresh?'unread':'',working:agents.filter(a=>a.online&&a.agent_status==='working').length});
+}
+// The optional strip beside the H: every agent as a small tile in roster order,
+// most urgent first. The host shows it only when the setting is on.
+let stripSignature='';
+function strip(blocked){
+  const sorted=HUDModel.sorted(agents,unread),tiles=GROUPS.flatMap(([g])=>sorted.filter(a=>group(a)===g)).slice(0,8).map(a=>({id:a.id,name:name(a),initials:initials(name(a)),hue:hue(name(a)),state:stateClass(a)}));
+  const working=agents.filter(a=>a.online&&a.agent_status==='working').length,label=blocked?`${blocked} need${blocked===1?'s':''} you`:working?`${working} working`:'';
+  const signature=JSON.stringify([tiles,label]);if(signature===stripSignature)return;stripSignature=signature;post({op:'strip',agents:tiles,label});
 }
 // Alerts since the panel was last opened, kept while they still need attention.
 // New ones show (or update) one toast; ones handled elsewhere update it quietly.
