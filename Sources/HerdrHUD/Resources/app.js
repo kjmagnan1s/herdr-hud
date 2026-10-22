@@ -195,7 +195,7 @@ window.receive=({type,data})=>{
   else if(type==='resetBaseline'){baseline=false;}
   else if(type==='select'){select(data.id);}
   else if(type==='alertPreview'){if(!opened){const parsed=HUDModel.parse(data.text,data.provider),reply=parsed.dialog?[parsed.dialog.title,parsed.dialog.question].filter(Boolean).join(': '):parsed.blocks.filter(x=>x.kind==='reply').at(-1)?.text||'';const answers=parsed.dialog?.question?(parsed.dialog.options||[]).filter(o=>o.n<=9&&!/^(Type something|Chat about this)/i.test(o.label)).slice(0,3).map(o=>`${o.n} ${o.label.replace(/\s*\(esc\)$/i,'').replace(/^Yes, and don.t ask again.*$/i,'Always').replace(/^No, and .*$/i,'No').slice(0,18)}`).join(' · '):'';
-post({op:'alert',id:data.id,title:data.title,tone:data.tone,preview:(parsed.dialog?.question||reply).replace(/\s+/g,' ').slice(0,200)||'Click to read the latest output',answers});}}
+post({op:'alert',id:data.id,title:data.title,tone:data.tone,preview:(parsed.dialog?.question||reply).replace(/\s+/g,' ').slice(0,200)||'Click to read the latest output',answers,waiting:agents.filter(x=>x.online&&status(x)==='blocked').length});}}
   else if(type==='output'){
     reading=false;if(data.error){if(data.id===selected)notice(data.error);else failed.add(data.id);if(wantSelected)read();else prefetch();return;}
     outputs.set(data.id,data);if(!parsedOutput(data.id,agents.find(a=>a.id===data.id)?.agent).dialog)answered.delete(data.id);if(data.id!==selected){renderRoster();if(wantSelected)read();else prefetch();return;}
