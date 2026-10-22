@@ -1,6 +1,8 @@
 import Foundation
 
 func notificationFrame(bubble: NSRect, size: NSSize, visibleFrame: NSRect, gap: CGFloat = 10) -> NSRect {
+    // Keep a small margin from the screen edge, like the gap from H.
+    let visibleFrame = visibleFrame.insetBy(dx:min(8,max(0,(visibleFrame.width-size.width)/2)),dy:min(8,max(0,(visibleFrame.height-size.height)/2)))
     let size = NSSize(width:min(size.width,visibleFrame.width),height:min(size.height,visibleFrame.height))
     func fit(_ origin: NSPoint) -> NSRect {
         NSRect(x:min(max(origin.x,visibleFrame.minX),visibleFrame.maxX-size.width),

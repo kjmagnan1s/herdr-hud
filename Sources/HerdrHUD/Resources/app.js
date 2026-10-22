@@ -47,7 +47,8 @@ function notify(updates){
 }
 // Two-character label for the narrow roster rail: "Documents 2" → "D2", "herdr-hud" → "HH".
 // A stable hue per agent name, so each agent keeps its own colored tile.
-function hue(text){let h=0;for(const c of String(text))h=(h*31+c.charCodeAt(0))%360;return h;}
+// FNV-1a plus a final mix, so names that differ only by a digit get far-apart hues.
+function hue(text){let h=2166136261;for(const c of String(text))h=Math.imul(h^c.charCodeAt(0),16777619);h=Math.imul(h^(h>>>15),2246822507);h^=h>>>13;return (h>>>0)%360;}
 function initials(text){const words=String(text).split(/[\s_.-]+/).filter(Boolean);const tail=/\d+$/.exec(text)?.[0];return ((words[0]?.[0]||'?')+(tail||words[1]?.[0]||words[0]?.[1]||'')).toUpperCase().slice(0,3);}
 // Roster cards are grouped by what they need from you, like a friends list:
 // needs you, new, working, ready, offline. Each card shows a state-tinted

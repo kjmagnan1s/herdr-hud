@@ -631,6 +631,8 @@ sealed class HUDContext : ApplicationContext
         int x = bubble.Left + (bubble.Width-toast.Width)/2;
         int y = bubble.Top-toast.Height-gap;
         if (y < area.Top) y = bubble.Bottom+gap;
+        // Keep a small margin from the screen edge, like the gap from H.
+        area.Inflate(-Math.Min(gap*8/10, Math.Max(0,(area.Width-toast.Width)/2)), -Math.Min(gap*8/10, Math.Max(0,(area.Height-toast.Height)/2)));
         toast.Location = new Point(Math.Clamp(x,area.Left,Math.Max(area.Left,area.Right-toast.Width)), Math.Clamp(y,area.Top,Math.Max(area.Top,area.Bottom-toast.Height)));
     }
     void HideToast() { toastTimer?.Dispose(); toastTimer = null; toast?.Dispose(); toast = null; toastText = null; toastStripe = null; }
@@ -699,7 +701,7 @@ sealed class HUDContext : ApplicationContext
                 File.WriteAllText(Path.Combine(Program.Support, "ui-verification.json"), checkedUI); return JsonNode.Parse(checkedUI) as JsonObject ?? new();
             case "preview-alert":
                 var foreground = Native.GetForegroundWindow();
-                ShowToast(new() { ["id"] = prefs.SelectedAgent, ["title"] = "Notification preview", ["preview"] = "This notification stays beside H, wherever you move it." });
+                ShowToast(new() { ["id"] = prefs.SelectedAgent, ["title"] = "Notification preview", ["preview"] = "Alerts appear here, clear of H." });
                 await Task.Delay(250);
                 var preview = Diagnostics();
                 preview["focusUnchanged"] = Native.GetForegroundWindow() == foreground;

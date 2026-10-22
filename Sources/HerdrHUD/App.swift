@@ -425,7 +425,7 @@ final class HUDApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKN
         case "show": if !visible { toggleVisibility() }
         case "preview-alert":
             let foreground = NSWorkspace.shared.frontmostApplication?.processIdentifier
-            showToast(["id":defaults.string(forKey:"selectedAgent") ?? "","title":"Notification preview","preview":"Notifications follow H and stay clear of the button."])
+            showToast(["id":defaults.string(forKey:"selectedAgent") ?? "","title":"Notification preview","preview":"Alerts appear here, clear of H."])
             DispatchQueue.main.asyncAfter(deadline:.now()+0.25) {
                 guard let toast = self.toast else { return }
                 let windows = CGWindowListCopyWindowInfo(.optionOnScreenOnly,kCGNullWindowID) as? [Row] ?? []
