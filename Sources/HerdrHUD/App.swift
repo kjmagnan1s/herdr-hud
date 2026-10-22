@@ -200,7 +200,7 @@ final class HUDApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKN
     }
     func positionStrip() {
         guard let strip = strip, let view = stripView, bubble != nil, !NSScreen.screens.isEmpty else { return }
-        strip.setFrame(stripFrame(bubble:bubble.frame,size:NSSize(width:view.layout().width,height:44),visibleFrame:screenForBubble().visibleFrame),display:true)
+        strip.setFrame(stripFrame(bubble:bubble.frame,size:NSSize(width:view.plan().width,height:44),visibleFrame:screenForBubble().visibleFrame),display:true)
     }
     @objc func changeShortcut(_ item: NSMenuItem) { defaults.set(item.tag,forKey:"shortcutMode"); registerHotkeys() }
     func registerHotkeys() {
@@ -531,7 +531,7 @@ final class StripView: NSView {
     override func acceptsFirstMouse(for event:NSEvent?) -> Bool { true }
     static func rank(_ state: String) -> Int { ["blocked":0,"unread":1,"working":2][state] ?? 3 }
     // Left to right: the "needs you" label, then tiles with a hairline between state groups.
-    func layout() -> (width: CGFloat, label: CGFloat, tiles: [CGFloat], separators: [CGFloat]) {
+    func plan() -> (width: CGFloat, label: CGFloat, tiles: [CGFloat], separators: [CGFloat]) {
         var x: CGFloat = 10, labelX: CGFloat = -1, xs: [CGFloat] = [], seps: [CGFloat] = [], last = -1
         if !label.isEmpty { labelX = x; x += ceil((label as NSString).size(withAttributes:Self.labelAttrs).width)+10 }
         for agent in agents {
@@ -550,14 +550,14 @@ final class StripView: NSView {
         let shape = NSBezierPath(roundedRect:bounds.insetBy(dx:0.5,dy:0.5),xRadius:14,yRadius:14)
         NSColor(srgbRed:0.067,green:0.075,blue:0.094,alpha:0.9).setFill(); shape.fill()
         NSColor(white:1,alpha:0.1).setStroke(); shape.lineWidth = 1; shape.stroke()
-        let plan = layout(), mid = bounds.midY
-        if plan.label >= 0 {
+        let spots = plan(), mid = bounds.midY
+        if spots.label >= 0 {
             let size = (label as NSString).size(withAttributes:Self.labelAttrs)
-            (label as NSString).draw(at:NSPoint(x:plan.label,y:mid-size.height/2),withAttributes:Self.labelAttrs)
+            (label as NSString).draw(at:NSPoint(x:spots.label,y:mid-size.height/2),withAttributes:Self.labelAttrs)
         }
-        for x in plan.separators { NSColor(white:1,alpha:0.12).setFill(); NSRect(x:x,y:mid-11,width:1,height:22).fill() }
+        for x in spots.separators { NSColor(white:1,alpha:0.12).setFill(); NSRect(x:x,y:mid-11,width:1,height:22).fill() }
         tiles = []
-        for (agent, x) in zip(agents, plan.tiles) {
+        for (agent, x) in zip(agents, spots.tiles) {
             let state = agent["state"] as? String ?? "", rect = NSRect(x:x,y:mid-14,width:28,height:28), hue = agent["hue"] as? Double ?? 0
             var hit = rect
             if let name = Self.name(agent) {

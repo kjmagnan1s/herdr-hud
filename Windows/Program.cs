@@ -225,7 +225,7 @@ sealed class AgentStrip : Form
     }
     static int Rank(string state) => state switch { "blocked" => 0, "unread" => 1, "working" => 2, _ => 3 };
     // Left to right: the "needs you" label, then tiles with a hairline between state groups.
-    (float width, List<float> tiles, List<float> separators) Layout()
+    (float width, List<float> tiles, List<float> separators) Plan()
     {
         float s = Dpi, x = 10*s; var xs = new List<float>(); var seps = new List<float>(); int last = -1;
         if (Label.Length > 0) { using var font = LabelFont(); x += TextRenderer.MeasureText(Label, font).Width + 8*s; }
@@ -238,7 +238,7 @@ sealed class AgentStrip : Form
         }
         return (x + 2*s, xs, seps);
     }
-    public Size Measure() => new((int)Math.Ceiling(Layout().width), (int)Math.Round(44*Dpi));
+    public Size Measure() => new((int)Math.Ceiling(Plan().width), (int)Math.Round(44*Dpi));
     static Color Hsl(double h, double s, double l)
     {
         h = ((h % 360) + 360) % 360; double c = (1-Math.Abs(2*l-1))*s, x = c*(1-Math.Abs(h/60%2-1)), m = l-c/2;
@@ -254,7 +254,7 @@ sealed class AgentStrip : Form
     {
         base.OnPaint(e); var g = e.Graphics; g.SmoothingMode = SmoothingMode.AntiAlias; float s = Dpi, mid = ClientSize.Height/2f;
         using (var edge = Bubble.Rounded(new RectangleF(0.5f, 0.5f, ClientSize.Width-1, ClientSize.Height-1), 14*s)) using (var pen = new Pen(Color.FromArgb(26,255,255,255))) g.DrawPath(pen, edge);
-        var plan = Layout();
+        var plan = Plan();
         if (Label.Length > 0) { using var font = LabelFont(); TextRenderer.DrawText(g, Label, font, new Rectangle((int)(10*s), 0, (int)(plan.tiles.FirstOrDefault(ClientSize.Width)-10*s), ClientSize.Height), Color.FromArgb(255,179,183), TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.Left); }
         using (var line = new SolidBrush(Color.FromArgb(31,255,255,255))) foreach (var x in plan.separators) g.FillRectangle(line, x, mid-11*s, 1*s, 22*s);
         tiles.Clear();
