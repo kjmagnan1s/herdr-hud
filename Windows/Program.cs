@@ -190,7 +190,7 @@ sealed class AgentPanel : Form
     public AgentPanel()
     {
         Text = "Herdr HUD Agents"; FormBorderStyle = FormBorderStyle.None; ShowInTaskbar = false; TopMost = true;
-        Size = new Size(960, 700); MinimumSize = new Size(640, 430); BackColor = Color.FromArgb(16, 18, 22); Padding = new Padding(5);
+        Size = new Size(960, 740); MinimumSize = new Size(640, 430); BackColor = Color.FromArgb(16, 18, 22); Padding = new Padding(5);
     }
     protected override void OnFormClosing(FormClosingEventArgs e) { if (!AllowQuit && e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; CloseRequested?.Invoke(); } base.OnFormClosing(e); }
     protected override void WndProc(ref Message m)
@@ -242,7 +242,7 @@ sealed class HUDContext : ApplicationContext
         // Sizes are design units; WebView2 renders CSS using the monitor DPI.
         float scale = panel.DeviceDpi / 96f;
         panel.MinimumSize = new Size((int)(640*scale), (int)(430*scale));
-        panel.Size = new Size((int)(960*scale), (int)(700*scale));
+        panel.Size = new Size((int)(960*scale), (int)(740*scale));
         bubble.Size = new Size((int)(64*scale), (int)(64*scale));
         using var bitmap = new Bitmap(32, 32);
         using (var g = Graphics.FromImage(bitmap)) { g.Clear(Color.FromArgb(24,27,34)); using var font = new Font("Segoe UI", 23, FontStyle.Bold, GraphicsUnit.Pixel); g.DrawString("H", font, Brushes.Goldenrod, 2, 0); }
@@ -459,9 +459,9 @@ sealed class HUDContext : ApplicationContext
         int Px(int value) => (int)Math.Round(value*scale);
         if (toast is null)
         {
-            toast = new SilentToast { Text = "Herdr HUD Agent Update", FormBorderStyle = FormBorderStyle.None, ShowInTaskbar = false, TopMost = true, BackColor = Color.FromArgb(17,19,24), Size = new Size(Px(340), Px(110)) };
+            toast = new SilentToast { Text = "Herdr HUD Agent Update", FormBorderStyle = FormBorderStyle.None, ShowInTaskbar = false, TopMost = true, BackColor = Color.FromArgb(17,19,24), Size = new Size(Px(380), Px(124)) };
             toastStripe = new Panel { Dock = DockStyle.Left, Width = Px(4) };
-            toastText = new Label { ForeColor = Color.FromArgb(185,190,199), Padding = new Padding(Px(12),Px(12),Px(38),Px(12)), Dock = DockStyle.Fill, Cursor = Cursors.Hand, UseMnemonic = false };
+            toastText = new Label { ForeColor = Color.FromArgb(220,223,228), Padding = new Padding(Px(12),Px(12),Px(38),Px(12)), Dock = DockStyle.Fill, Cursor = Cursors.Hand, UseMnemonic = false };
             toastText.Paint += PaintToastTitle;
             toastText.Click += (_, _) => { string id = toastAgent; OpenPanel(); Emit("select", new() { ["id"] = id }); };
             var close = new Button { Text = "×", Width = Px(28), Height = Px(28), Left = toast.ClientSize.Width-Px(30), Top = Px(2), Anchor = AnchorStyles.Top | AnchorStyles.Right, FlatStyle = FlatStyle.Flat, ForeColor = Color.WhiteSmoke }; close.FlatAppearance.BorderSize = 0; close.Click += (_, _) => HideToast();

@@ -160,7 +160,7 @@ function renderOutput(){
   fitTerminal();
   // On open, start at your latest prompt when the exchange since then fits.
   const latest=first&&!terminal?[...out.querySelectorAll('.turn.user')].at(-1):null;
-  out.scrollTop=latest&&out.scrollHeight-latest.offsetTop<=out.clientHeight?latest.offsetTop-16:first||wasBottom?out.scrollHeight:scroll;
+  out.scrollTop=latest&&out.scrollHeight-latest.offsetTop<=out.clientHeight?latest.offsetTop:first||wasBottom?out.scrollHeight:scroll;
   scrolled();
 }
 function read(){if(!opened||reading||!active()?.online)return;reading=true;wantSelected=false;request('output',{id:selected});}
@@ -242,9 +242,10 @@ $('prompt').onkeydown=e=>{
     input.dispatchEvent(new Event('input',{bubbles:true}));
   }else if(!e.repeat){send();}
 };
-function scrolled(){const out=$('output'),on=out.scrollTop>4;out.classList.toggle('scrolled',on);$('earlier').hidden=!on||!out.querySelector('.turn.user');}
+// The fade and the back pill appear only once your latest prompt is out of view.
+function scrolled(){const out=$('output'),latest=[...out.querySelectorAll('.turn.user')].at(-1),top=out.scrollTop,away=!!latest&&(latest.offsetTop<top-8||latest.offsetTop>top+out.clientHeight-40);out.classList.toggle('scrolled',top>4&&away);$('earlier').hidden=!away;if(away)$('earlier-text').textContent=latest.querySelector('.bubble')?.textContent.replace(/\s+/g,' ').trim()||'Your last prompt';}
 $('output').onscroll=scrolled;
-$('earlier').onclick=()=>{const out=$('output'),latest=[...out.querySelectorAll('.turn.user')].at(-1);if(latest)out.scrollTo({top:latest.offsetTop-16,behavior:'smooth'});};
+$('earlier').onclick=()=>{const out=$('output'),latest=[...out.querySelectorAll('.turn.user')].at(-1);if(latest)out.scrollTo({top:latest.offsetTop,behavior:'smooth'});};
 if(typeof ResizeObserver==='function')new ResizeObserver(()=>fitTerminal()).observe($('output'));
 for(const view of ['chat','terminal'])$(view).onclick=()=>{mode=view;request('preferences',{mode});lastRendered='';renderOutput();};
 const divider=$('divider');divider.onpointerdown=e=>{divider.setPointerCapture(e.pointerId);};divider.onpointermove=e=>{if(divider.hasPointerCapture(e.pointerId)){const aside=document.querySelector('aside');aside.style.width=Math.min(Math.max(e.clientX-aside.getBoundingClientRect().left,56),innerWidth*.42)+'px';}};
