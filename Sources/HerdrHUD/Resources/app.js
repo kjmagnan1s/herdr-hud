@@ -256,7 +256,7 @@ $('prompt').onkeydown=e=>{
   }else if(!e.repeat){send();}
 };
 // The fade and the back pill appear only once your latest prompt is out of view.
-function scrolled(){const out=$('output'),latest=[...out.querySelectorAll('.turn.user')].at(-1),top=out.scrollTop,away=!!latest&&(latest.offsetTop<top-8||latest.offsetTop>top+out.clientHeight-40);out.classList.toggle('scrolled',top>4&&away);$('earlier').hidden=!away;if(away)$('earlier-text').textContent=latest.querySelector('.bubble')?.textContent.replace(/\s+/g,' ').trim()||'Your last prompt';}
+function scrolled(){const out=$('output'),latest=[...out.querySelectorAll('.turn.user')].at(-1),top=out.scrollTop,away=!!latest&&(latest.offsetTop<top-8||latest.offsetTop>top+out.clientHeight-40);out.classList.toggle('scrolled',top>4&&(away||out.classList.contains('terminal')));$('earlier').hidden=!away;if(away)$('earlier-text').textContent=latest.querySelector('.bubble')?.textContent.replace(/\s+/g,' ').trim()||'Your last prompt';}
 $('output').onscroll=scrolled;
 $('earlier').onclick=()=>{const out=$('output'),latest=[...out.querySelectorAll('.turn.user')].at(-1);if(latest)out.scrollTo({top:latest.offsetTop,behavior:'smooth'});};
 if(typeof ResizeObserver==='function')new ResizeObserver(()=>fitTerminal()).observe($('output'));
