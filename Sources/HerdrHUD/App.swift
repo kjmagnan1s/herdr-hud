@@ -27,43 +27,47 @@ final class BubbleView: NSView {
     let arc = CAShapeLayer()
     override init(frame: NSRect) {
         super.init(frame: frame); wantsLayer = true
-        // A short amber arc turns around the ring while any agent works. Core
-        // Animation runs it on the GPU; it is removed when nothing is working.
-        arc.frame = bounds; arc.path = CGPath(ellipseIn: bounds.insetBy(dx:3.5, dy:3.5), transform: nil)
+        // A short amber dash runs around the tile's outline while any agent works.
+        // Core Animation runs it on the GPU; it is removed when nothing is working.
+        arc.frame = bounds; arc.path = CGPath(roundedRect: bounds.insetBy(dx:3.5, dy:3.5), cornerWidth:18, cornerHeight:18, transform: nil)
         arc.fillColor = nil; arc.strokeColor = Tone.amber.cgColor; arc.lineWidth = 2.5; arc.lineCap = .round
-        arc.strokeStart = 0; arc.strokeEnd = 0.28; arc.isHidden = true
+        arc.lineDashPattern = [NSNumber(value:BubbleView.dash), NSNumber(value:Double(BubbleView.perimeter)-BubbleView.dash)]; arc.isHidden = true
         layer?.addSublayer(arc)
     }
     required init?(coder: NSCoder) { fatalError() }
+    // Outline length of the arc's rounded square: straight sides plus one full circle of corners.
+    static let perimeter = 4*(57.0-36)+2*Double.pi*18, dash = 34.0
     func updateArc() {
         arc.isHidden = !working; arc.removeAllAnimations()
         guard working, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
-        let spin = CABasicAnimation(keyPath:"transform.rotation.z")
-        spin.fromValue = 0; spin.toValue = -2 * Double.pi; spin.duration = 2.4; spin.repeatCount = .infinity
-        arc.anchorPoint = CGPoint(x:0.5, y:0.5); arc.position = CGPoint(x:bounds.midX, y:bounds.midY)
-        arc.add(spin, forKey:"spin")
+        let run = CABasicAnimation(keyPath:"lineDashPhase")
+        run.fromValue = 0; run.toValue = BubbleView.perimeter; run.duration = 2.4; run.repeatCount = .infinity
+        arc.add(run, forKey:"run")
     }
     override var acceptsFirstResponder: Bool { false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    // A dark glass orb with a thin ring in the accent, or red with a glow while
-    // an agent needs input, like a debuff highlight. The count sits in a pill.
+    // An app tile in Claude's terracotta, like the panel's brand mark, with a
+    // thin accent ring, or red with a glow while an agent needs input. The count
+    // sits in a pill.
     override func draw(_ dirtyRect: NSRect) {
-        let orb = bounds.insetBy(dx:7, dy:7), shape = NSBezierPath(ovalIn:orb)
+        let tile = bounds.insetBy(dx:7, dy:7), shape = NSBezierPath(roundedRect:tile,xRadius:14,yRadius:14)
         NSGraphicsContext.saveGraphicsState()
-        let drop = NSShadow(); drop.shadowColor = NSColor(white:0,alpha:0.55); drop.shadowBlurRadius = 6; drop.shadowOffset = NSSize(width:0,height:-2); drop.set()
-        Tone.ink.setFill(); shape.fill()
+        let drop = NSShadow(); drop.shadowColor = NSColor(white:0,alpha:0.55); drop.shadowBlurRadius = 8; drop.shadowOffset = NSSize(width:0,height:-3); drop.set()
+        Tone.accent.setFill(); shape.fill()
         NSGraphicsContext.restoreGraphicsState()
-        NSGradient(starting:NSColor(srgbRed:0.16,green:0.17,blue:0.21,alpha:1),ending:Tone.ink)?.draw(in:shape,relativeCenterPosition:NSPoint(x:0,y:0.4))
-        NSColor(white:1,alpha:0.10).setStroke(); let rim = NSBezierPath(ovalIn:orb.insetBy(dx:0.5,dy:0.5)); rim.lineWidth = 1; rim.stroke()
-        let ring = NSBezierPath(ovalIn:orb.insetBy(dx:-1.5,dy:-1.5)); ring.lineWidth = 2
+        NSGradient(starting:NSColor(srgbRed:0.79,green:0.37,blue:0.23,alpha:1),ending:NSColor(srgbRed:0.95,green:0.60,blue:0.44,alpha:1))?.draw(in:shape,angle:90)
+        NSColor(white:1,alpha:0.14).setStroke(); let rim = NSBezierPath(roundedRect:tile.insetBy(dx:0.5,dy:0.5),xRadius:13.5,yRadius:13.5); rim.lineWidth = 1; rim.stroke()
+        Tone.ink.withAlphaComponent(0.9).setStroke(); let gap = NSBezierPath(roundedRect:tile.insetBy(dx:-1,dy:-1),xRadius:15,yRadius:15); gap.lineWidth = 2; gap.stroke()
+        let ring = NSBezierPath(roundedRect:tile.insetBy(dx:-2.75,dy:-2.75),xRadius:16.75,yRadius:16.75)
         NSGraphicsContext.saveGraphicsState()
         if tone == "blocked" {
-            let glow = NSShadow(); glow.shadowColor = Tone.red.withAlphaComponent(0.85); glow.shadowBlurRadius = 7; glow.set()
-            Tone.red.setStroke()
-        } else { Tone.accent.withAlphaComponent(0.9).setStroke() }
+            let glow = NSShadow(); glow.shadowColor = Tone.red.withAlphaComponent(0.75); glow.shadowBlurRadius = 8; glow.set()
+            Tone.red.setStroke(); ring.lineWidth = 2
+        } else { Tone.accentHi.withAlphaComponent(0.55).setStroke(); ring.lineWidth = 1.5 }
         ring.stroke()
         NSGraphicsContext.restoreGraphicsState()
-        let attrs: [NSAttributedString.Key:Any] = [.font:NSFont.monospacedSystemFont(ofSize:23, weight:.heavy), .foregroundColor:Tone.accentHi]
+        let shade = NSShadow(); shade.shadowColor = NSColor(srgbRed:0.3,green:0.08,blue:0,alpha:0.45); shade.shadowBlurRadius = 2; shade.shadowOffset = NSSize(width:0,height:-1)
+        let attrs: [NSAttributedString.Key:Any] = [.font:NSFont.systemFont(ofSize:24, weight:.heavy), .foregroundColor:NSColor.white, .shadow:shade]
         let glyph = "H" as NSString, size = glyph.size(withAttributes:attrs)
         glyph.draw(at:NSPoint(x:bounds.midX-size.width/2,y:bounds.midY-size.height/2), withAttributes:attrs)
         if count > 0 {

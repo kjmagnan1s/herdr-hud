@@ -518,7 +518,7 @@ aside {
 .entry > .step { margin-top: calc(var(--text-body) * var(--leading) / 2 - 3.5px); }
 .reply { font-size: var(--text-body); line-height: var(--leading); color: var(--text); }
 .reply.context { color: var(--text-soft); }
-.result-line { display: flex; gap: 8px; min-width: 0; margin-left: 2px; font: 13px/1.6 var(--mono); color: var(--text-muted); }
+.result-line { display: flex; gap: 8px; min-width: 0; margin-left: 2px; font: 13px/1.6 var(--mono); color: var(--text-soft); }
 .result-line .elbow { flex-shrink: 0; color: var(--text-faint); }
 .result-text { min-width: 0; overflow-wrap: anywhere; }
 .result-line.done .result-text::before { content: "✓ "; color: var(--done); }
@@ -567,7 +567,7 @@ code { font: .86em var(--mono); padding: 1px 5px; border-radius: 5px; color: #d9
 .tool, .tool-run { margin: 6px 0; }
 .tool-head { display: flex; align-items: center; gap: 8px; min-width: 0; font: 13.5px/1.6 var(--mono); color: var(--text-soft); white-space: nowrap; }
 .tool-name { font-weight: 700; color: var(--text); }
-.tool-detail { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-muted); }
+.tool-detail { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-soft); }
 .tool > .result-line, .tool > summary > .result-line { padding-left: 13px; }
 details.tool > summary, .tool-run > summary { display: block; list-style: none; cursor: pointer; margin: 0 -8px; padding: 2px 8px; border-radius: 6px; }
 .tool-run > summary { display: flex; align-items: center; gap: 8px; font: 13px/1.6 var(--mono); color: var(--text-muted); }

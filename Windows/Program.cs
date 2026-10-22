@@ -118,12 +118,19 @@ sealed class Bubble : Form
         spinner.Enabled = working && SystemInformation.UIEffectsEnabled;
         UpdateShape(); Invalidate();
     }
+    static GraphicsPath Rounded(RectangleF r, float radius)
+    {
+        var path = new GraphicsPath(); float d = radius*2;
+        path.AddArc(r.X, r.Y, d, d, 180, 90); path.AddArc(r.Right-d, r.Y, d, d, 270, 90);
+        path.AddArc(r.Right-d, r.Bottom-d, d, d, 0, 90); path.AddArc(r.X, r.Bottom-d, d, d, 90, 90);
+        path.CloseFigure(); return path;
+    }
     void UpdateShape()
     {
         if (ClientSize.Width <= 0 || ClientSize.Height <= 0) return;
-        // Winding fill unions the overlapping circles instead of cutting a hole.
-        using var path = new GraphicsPath(FillMode.Winding);
-        path.AddEllipse(ClientRectangle);
+        // Winding fill unions the rounded tile and the badge instead of cutting a hole.
+        float scale = ClientSize.Width / 64f;
+        using var path = Rounded(new RectangleF(1*scale, 1*scale, 62*scale, 62*scale), 21*scale); path.FillMode = FillMode.Winding;
         if (Count > 0) path.AddEllipse(BadgeBounds);
         var old = Region; Region = new Region(path); old?.Dispose();
     }
@@ -146,17 +153,27 @@ sealed class Bubble : Form
     {
         base.OnPaint(e); var g = e.Graphics; g.SmoothingMode = SmoothingMode.AntiAlias;
         float scale = ClientSize.Width / 64f;
-        var ring = new RectangleF(2*scale, 2*scale, Width-5*scale, Height-5*scale);
+        // An app tile in Claude's terracotta, like the panel's brand mark, inside
+        // a thin accent ring that turns red with a glow while an agent needs input.
+        var tile = new RectangleF(7*scale, 7*scale, 50*scale, 50*scale);
+        using (var shape = Rounded(tile, 14*scale))
+        using (var fill = new LinearGradientBrush(tile, Color.FromArgb(242,153,112), Color.FromArgb(201,94,58), LinearGradientMode.Vertical)) g.FillPath(fill, shape);
+        var outline = new RectangleF(4.25f*scale, 4.25f*scale, 55.5f*scale, 55.5f*scale);
+        using var ring = Rounded(outline, 16.75f*scale);
         if (Tone == "blocked")
         {
-            // Needs input wins: a red ring with a soft inner glow.
-            for (int i = 3; i >= 1; i--) { using var glow = new Pen(Color.FromArgb(40, Red), (2+i*2)*scale); g.DrawEllipse(glow, ring); }
-            using var red = new Pen(Red, 2*scale); g.DrawEllipse(red, ring);
+            for (int i = 3; i >= 1; i--) { using var glow = new Pen(Color.FromArgb(40, Red), (2+i*2)*scale); g.DrawPath(glow, ring); }
+            using var red = new Pen(Red, 2*scale); g.DrawPath(red, ring);
         }
-        else { using var pen = new Pen(Accent, 2*scale); g.DrawEllipse(pen, ring); }
-        if (Working) { using var arc = new Pen(Amber, 3*scale) { StartCap = LineCap.Round, EndCap = LineCap.Round }; g.DrawArc(arc, ring, spin - 90, 100); }
-        using var font = new Font("Cascadia Mono", Height * .36f, FontStyle.Bold, GraphicsUnit.Pixel);
-        TextRenderer.DrawText(g, "H", font, ClientRectangle, AccentHi, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+        else { using var pen = new Pen(Color.FromArgb(140, AccentHi), 1.5f*scale); g.DrawPath(pen, ring); }
+        if (Working)
+        {
+            // A short amber dash runs around the outline; the offset walks it along.
+            using var dash = new Pen(Amber, 2.5f*scale) { DashCap = DashCap.Round, DashPattern = new[] { 13f, 65f }, DashOffset = spin / 360f * 78f };
+            g.DrawPath(dash, ring);
+        }
+        using var font = new Font("Segoe UI Black", Height * .36f, FontStyle.Regular, GraphicsUnit.Pixel);
+        TextRenderer.DrawText(g, "H", font, ClientRectangle, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
         if (Count > 0)
         {
             var rect = BadgeBounds; bool red = Tone == "blocked";
