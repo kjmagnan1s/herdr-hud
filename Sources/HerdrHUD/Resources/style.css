@@ -514,7 +514,7 @@ aside {
 .reply.context { color: var(--text-soft); }
 .result-line { display: flex; gap: 8px; min-width: 0; margin-left: 2px; font: 13px/1.6 var(--mono); color: var(--text-muted); }
 .result-line .elbow { flex-shrink: 0; color: var(--text-faint); }
-.result-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.result-text { min-width: 0; overflow-wrap: anywhere; }
 .result-line.done .result-text::before { content: "✓ "; color: var(--done); }
 
 /* Markdown */
