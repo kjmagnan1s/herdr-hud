@@ -316,7 +316,7 @@ aside {
 .agent-icon.idle .dot { background: var(--idle); }
 .agent.offline .agent-icon { filter: grayscale(1); }
 .agent-name { grid-area: name; min-width: 0; color: var(--text); font-weight: 680; font-size: 14.5px; line-height: 1.3; letter-spacing: -.1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.agent-meta { grid-area: meta; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 12.5px/1.4 var(--font); color: var(--text-muted); }
+.agent-meta { grid-area: meta; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 13px/1.4 var(--font); color: var(--text-soft); }
 .agent-time { grid-area: time; font: 550 12px/1 var(--font); font-variant-numeric: tabular-nums; color: var(--text-muted); }
 .agent-key { grid-area: key; justify-self: end; display: grid; place-items: center; min-width: 20px; height: 19px; padding: 0 5px; border-radius: 5px; border: 1px solid var(--line-strong); background: rgba(255, 255, 255, .05); font: 650 11.5px/1 var(--font); color: var(--text); background: rgba(255, 255, 255, .09); }
 .agent-key:empty { display: none; }
@@ -401,7 +401,7 @@ aside {
 }
 .conversation-title { min-width: 0; }
 .conversation-header strong { display: block; font-size: 18px; line-height: 1.25; font-weight: 720; letter-spacing: -.3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.subtitle { margin-top: 3px; font: 13px/1.3 var(--font); color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.subtitle { margin-top: 3px; font: 500 13.5px/1.3 var(--font); color: var(--text-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #chips { display: flex; gap: 6px; min-width: 0; overflow: hidden; }
 #chips .chip {
   display: flex;
@@ -440,8 +440,8 @@ aside {
   border-bottom: 1px solid rgba(232, 135, 95, .2);
   box-shadow: inset 2px 0 0 var(--accent);
 }
-#work-text { font-weight: 650; color: #ffbe9f; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#work-time { font: 500 12.5px/1 var(--font); font-variant-numeric: tabular-nums; color: var(--text-soft); white-space: nowrap; }
+#work-text { font-weight: 650; color: #ffd2bc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#work-time { font: 550 13px/1 var(--font); font-variant-numeric: tabular-nums; color: var(--text); white-space: nowrap; }
 .spark { width: 14px; text-align: center; color: var(--accent); font: 700 14px/1 var(--mono); }
 .spark::before { content: "✻"; animation: spark 1.2s steps(1) infinite; }
 @keyframes spark { 0% { content: "·"; } 16% { content: "✢"; } 33% { content: "✳"; } 50% { content: "✶"; } 66% { content: "✻"; } 83% { content: "✽"; } }
