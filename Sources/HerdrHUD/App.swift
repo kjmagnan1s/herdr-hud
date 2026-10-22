@@ -522,6 +522,12 @@ final class StripView: NSView {
     var agents: [Row] = [], label = ""
     var tiles: [(id: String, rect: NSRect)] = []
     static let labelAttrs: [NSAttributedString.Key:Any] = [.font:NSFont.systemFont(ofSize:12.5,weight:.semibold),.foregroundColor:NSColor(srgbRed:1,green:0.70,blue:0.72,alpha:1)]
+    static let nameAttrs: [NSAttributedString.Key:Any] = [.font:NSFont.systemFont(ofSize:13,weight:.semibold),.foregroundColor:NSColor(srgbRed:0.93,green:0.94,blue:0.95,alpha:1)]
+    // Agents that need you or are working carry their name; ready ones stay a tile.
+    static func name(_ agent: Row) -> String? {
+        guard ["blocked","working","unread"].contains(agent["state"] as? String ?? "") else { return nil }
+        let text = agent["name"] as? String ?? ""; return text.count > 18 ? String(text.prefix(17)) + "…" : text
+    }
     override func acceptsFirstMouse(for event:NSEvent?) -> Bool { true }
     static func rank(_ state: String) -> Int { ["blocked":0,"unread":1,"working":2][state] ?? 3 }
     // Left to right: the "needs you" label, then tiles with a hairline between state groups.
@@ -532,6 +538,7 @@ final class StripView: NSView {
             let rank = Self.rank(agent["state"] as? String ?? "")
             if last >= 0 && rank != last { seps.append(x); x += 9 }
             xs.append(x); x += 36; last = rank
+            if let name = Self.name(agent) { x += ceil((name as NSString).size(withAttributes:Self.nameAttrs).width)+11 }
         }
         return (x-8+10, labelX, xs, seps)
     }
@@ -552,12 +559,17 @@ final class StripView: NSView {
         tiles = []
         for (agent, x) in zip(agents, plan.tiles) {
             let state = agent["state"] as? String ?? "", rect = NSRect(x:x,y:mid-14,width:28,height:28), hue = agent["hue"] as? Double ?? 0
-            tiles.append((agent["id"] as? String ?? "", rect))
+            var hit = rect
+            if let name = Self.name(agent) {
+                let size = (name as NSString).size(withAttributes:Self.nameAttrs)
+                (name as NSString).draw(at:NSPoint(x:rect.maxX+7,y:mid-size.height/2),withAttributes:Self.nameAttrs); hit.size.width += ceil(size.width)+7
+            }
+            tiles.append((agent["id"] as? String ?? "", hit))
             let ring: NSColor? = state == "blocked" ? Tone.red : state == "working" ? Tone.amber.withAlphaComponent(0.85) : state == "unread" ? Tone.blue : nil
             if let ring = ring { ring.setStroke(); let outer = NSBezierPath(roundedRect:rect.insetBy(dx:-2.75,dy:-2.75),xRadius:10,yRadius:10); outer.lineWidth = 1.5; outer.stroke() }
             let quiet = ["idle","done","offline"].contains(state), path = NSBezierPath(roundedRect:rect,xRadius:8,yRadius:8)
             let top = state == "offline" ? NSColor(white:0.45,alpha:1) : Self.hsl(hue,0.60,0.56), bottom = state == "offline" ? NSColor(white:0.25,alpha:1) : Self.hsl(hue+24,0.54,0.36)
-            NSGraphicsContext.saveGraphicsState(); if quiet { NSGraphicsContext.current?.cgContext.setAlpha(0.55) }
+            NSGraphicsContext.saveGraphicsState(); if quiet { NSGraphicsContext.current?.cgContext.setAlpha(0.82) }
             NSGradient(starting:top,ending:bottom)?.draw(in:path,angle:-70)
             NSColor(white:1,alpha:0.16).setStroke(); path.lineWidth = 1; path.stroke()
             let text = (agent["initials"] as? String ?? "?") as NSString, attrs: [NSAttributedString.Key:Any] = [.font:NSFont.systemFont(ofSize:10.5,weight:.heavy),.foregroundColor:NSColor.white]

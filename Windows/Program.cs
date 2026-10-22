@@ -216,6 +216,13 @@ sealed class AgentStrip : Form
     }
     float Dpi => DeviceDpi / 96f;
     Font LabelFont() => new("Segoe UI Semibold", 12.5f*Dpi, FontStyle.Regular, GraphicsUnit.Pixel);
+    static Font NameFont(float dpi) => new("Segoe UI Semibold", 13f*dpi, FontStyle.Regular, GraphicsUnit.Pixel);
+    // Agents that need you or are working carry their name; ready ones stay a tile.
+    static string? Name(JsonObject agent)
+    {
+        if (agent.Text("state") is not ("blocked" or "working" or "unread")) return null;
+        var text = agent.Text("name"); return text.Length > 18 ? text[..17] + "…" : text;
+    }
     static int Rank(string state) => state switch { "blocked" => 0, "unread" => 1, "working" => 2, _ => 3 };
     // Left to right: the "needs you" label, then tiles with a hairline between state groups.
     (float width, List<float> tiles, List<float> separators) Layout()
@@ -227,6 +234,7 @@ sealed class AgentStrip : Form
             int rank = Rank(agent.Text("state"));
             if (last >= 0 && rank != last) { seps.Add(x); x += 9*s; }
             xs.Add(x); x += 36*s; last = rank;
+            if (Name(agent) is string name) { using var font = NameFont(s); x += TextRenderer.MeasureText(name, font, Size.Empty, TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix).Width + 11*s; }
         }
         return (x + 2*s, xs, seps);
     }
@@ -254,10 +262,17 @@ sealed class AgentStrip : Form
         for (int i = 0; i < Agents.Count && i < plan.tiles.Count; i++)
         {
             var agent = Agents[i]; string state = agent.Text("state"); double hue = agent["hue"]?.GetValue<double>() ?? 0;
-            var rect = new RectangleF(plan.tiles[i], mid-14*s, 28*s, 28*s); tiles.Add((agent.Text("id"), rect));
+            var rect = new RectangleF(plan.tiles[i], mid-14*s, 28*s, 28*s); var hit = rect;
+            if (Name(agent) is string name)
+            {
+                using var font = NameFont(s); var size = TextRenderer.MeasureText(name, font, Size.Empty, TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
+                TextRenderer.DrawText(g, name, font, new Point((int)(rect.Right+7*s), (int)(mid-size.Height/2f)), Color.FromArgb(238,240,243), TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
+                hit.Width += size.Width + 7*s;
+            }
+            tiles.Add((agent.Text("id"), hit));
             Color? ring = state switch { "blocked" => Bubble.Red, "working" => Color.FromArgb(217, Bubble.Amber), "unread" => Bubble.Blue, _ => null };
             if (ring is Color tone) { using var outer = Bubble.Rounded(RectangleF.Inflate(rect, 2.75f*s, 2.75f*s), 10*s); using var pen = new Pen(tone, 1.5f*s); g.DrawPath(pen, outer); }
-            int alpha = state is "idle" or "done" or "offline" ? 140 : 255;
+            int alpha = state is "idle" or "done" or "offline" ? 209 : 255;
             Color top = state == "offline" ? Color.FromArgb(115,115,115) : Hsl(hue, .60, .56), bottom = state == "offline" ? Color.FromArgb(64,64,64) : Hsl(hue+24, .54, .36);
             using (var shape = Bubble.Rounded(rect, 8*s))
             using (var fill = new LinearGradientBrush(rect, Color.FromArgb(alpha, top), Color.FromArgb(alpha, bottom), 70f))
