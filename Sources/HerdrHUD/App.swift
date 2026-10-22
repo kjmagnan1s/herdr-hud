@@ -371,7 +371,7 @@ final class HUDApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKN
             toast = window; positionToast(); window.orderFrontRegardless()
         }
         view.agentID = data["id"] as? String ?? ""; view.sticky = data["tone"] as? String == "blocked"
-        view.title = data["title"] as? String ?? "Agent update"; view.detail = data["preview"] as? String ?? "Click to read the response"; view.answers = data["answers"] as? String ?? ""; view.waiting = data["waiting"] as? Int ?? 0
+        view.title = data["title"] as? String ?? "Agent update"; view.detail = data["preview"] as? String ?? "Click to read the response"; view.answers = data["answers"] as? String ?? ""; view.waiting = data["waiting"] as? Int ?? 0; view.danger = data["danger"] as? Bool ?? false
         view.needsDisplay = true; armToastTimer()
     }
     func armToastTimer() {
@@ -433,7 +433,7 @@ final class HUDApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKN
 }
 final class ToastView: NSView {
     weak var app: HUDApp?
-    var agentID = "", title = "", detail = "", answers = "", sticky = false, waiting = 0
+    var agentID = "", title = "", detail = "", answers = "", sticky = false, danger = false, waiting = 0
     override func acceptsFirstMouse(for event:NSEvent?) -> Bool { true }
     override func updateTrackingAreas() { super.updateTrackingAreas(); for area in trackingAreas { removeTrackingArea(area) }; addTrackingArea(NSTrackingArea(rect:bounds,options:[.mouseEnteredAndExited,.activeAlways],owner:self)) }
     override func mouseEntered(with event:NSEvent) { app?.toastHover = true }
@@ -454,7 +454,8 @@ final class ToastView: NSView {
         let kicker = (sticky ? (waiting > 1 ? "NEEDS YOU · \(waiting) WAITING" : "NEEDS YOU") : "FINISHED") as NSString
         kicker.draw(in:NSRect(x:64,y:top-27,width:220,height:14),withAttributes:[.font:NSFont.systemFont(ofSize:10.5,weight:.bold),.kern:0.8,.foregroundColor:sticky ? NSColor(srgbRed:1,green:0.61,blue:0.63,alpha:1) : NSColor(srgbRed:0.61,green:0.78,blue:1,alpha:1),.paragraphStyle:line])
         (title as NSString).draw(in:NSRect(x:64,y:top-49,width:280,height:20),withAttributes:[.font:NSFont.systemFont(ofSize:15,weight:.semibold),.foregroundColor:NSColor(white:0.95,alpha:1),.paragraphStyle:line])
-        (detail as NSString).draw(in:NSRect(x:64,y:top-71,width:300,height:19),withAttributes:[.font:NSFont.systemFont(ofSize:13.5),.foregroundColor:NSColor(srgbRed:0.86,green:0.87,blue:0.89,alpha:1),.paragraphStyle:line])
+        // A destructive command reads in amber, and Yes is no longer the highlighted key.
+        (detail as NSString).draw(in:NSRect(x:64,y:top-71,width:300,height:19),withAttributes:[.font:NSFont.systemFont(ofSize:13.5,weight:danger ? .medium : .regular),.foregroundColor:danger ? NSColor(srgbRed:1,green:0.80,blue:0.55,alpha:1) : NSColor(srgbRed:0.86,green:0.87,blue:0.89,alpha:1),.paragraphStyle:line])
         let mode = UserDefaults.standard.integer(forKey:"shortcutMode"), keys = mode == 0 ? "⌘⌥H" : mode == 1 ? "⌃⌥H" : ""
         let hintFont = NSFont.systemFont(ofSize:13,weight:.medium), hintColor = NSColor(srgbRed:0.76,green:0.79,blue:0.83,alpha:1)
         // A hairline splits the message from the keys that act on it.
@@ -482,7 +483,7 @@ final class ToastView: NSView {
                 for (i, answer) in answers.components(separatedBy:" · ").enumerated() {
                     let parts = answer.split(separator:" ",maxSplits:1).map(String.init)
                     guard let number = parts.first else { continue }
-                    cap(number, primary: i == 0); word(parts.count > 1 ? parts[1] : "",NSColor(white:0.95,alpha:1))
+                    cap(number, primary: i == 0 && !danger); word(parts.count > 1 ? parts[1] : "",NSColor(white:0.95,alpha:1))
                 }
             }
         }

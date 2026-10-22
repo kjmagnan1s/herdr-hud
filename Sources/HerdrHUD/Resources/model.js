@@ -212,5 +212,9 @@
     return {id:ordered[0].agent.id,tone:blocked.length?'blocked':'done',title,preview:names.join(', ').slice(0,200),count:ordered.length};
   }
 
-  const api={sorted,alerts,summary,parse,identity,pane,labels,preview,ago,chatProviders,extractDialog};if(typeof module!=='undefined')module.exports=api;else root.HUDModel=api;
+  // Commands that delete, overwrite history or publish. The HUD still lets you
+  // answer them, but never dresses Yes up as the obvious choice.
+  const RISKY=/\brm\s+-\w*[rf]|\bgit\s+(push\s+.*(--force|-f\b)|reset\s+--hard|clean\s+-\w*f)|\bdrop\s+(table|database)\b|\bmkfs|\bdd\s+if=|\bchmod\s+-R\s+777|\bsudo\b|\btruncate\b|>\s*\/dev\/sd/i;
+  function risky(dialog){return !!dialog&&dialog.type==='permission'&&RISKY.test(`${dialog.title}\n${dialog.detail||''}`);}
+  const api={sorted,alerts,summary,parse,identity,pane,labels,preview,ago,chatProviders,extractDialog,risky};if(typeof module!=='undefined')module.exports=api;else root.HUDModel=api;
 })(globalThis);

@@ -351,6 +351,9 @@ aside {
 .quick-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .quick-answer.primary { color: #06150d; background: linear-gradient(#5fe0a2, #36bf7e); border-color: rgba(0, 0, 0, .25); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35), 0 0 14px rgba(69, 208, 142, .28), var(--drop); }
 .quick-answer.primary kbd { color: #06150d; background: rgba(255, 255, 255, .32); border-color: rgba(0, 0, 0, .18); box-shadow: none; }
+.agent-wrap:has(.quick.danger) .ask-text { color: #ffd9a8; }
+.quick-answer.caution { color: #ffd9a8; border-color: rgba(245, 181, 68, .55); background: rgba(245, 181, 68, .12); }
+.quick-answer.caution kbd { color: #ffd9a8; border-color: rgba(245, 181, 68, .45); background: rgba(245, 181, 68, .14); }
 .quick-answer.deny:hover { border-color: var(--blocked-line); background: var(--blocked-soft); }
 .quick-answer:hover:not(:disabled) { border-color: rgba(255, 255, 255, .26); }
 .quick-answer.primary:hover:not(:disabled) { filter: brightness(1.08); border-color: rgba(0, 0, 0, .25); background: linear-gradient(#5fe0a2, #36bf7e); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .4), 0 0 20px rgba(69, 208, 142, .45), var(--drop); }
