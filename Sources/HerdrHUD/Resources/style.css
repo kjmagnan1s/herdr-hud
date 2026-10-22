@@ -318,7 +318,7 @@ aside {
 .agent-name { grid-area: name; min-width: 0; color: var(--text); font-weight: 680; font-size: 14.5px; line-height: 1.3; letter-spacing: -.1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agent-meta { grid-area: meta; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 13px/1.4 var(--font); color: var(--text-soft); }
 .agent-time { grid-area: time; font: 550 12px/1 var(--font); font-variant-numeric: tabular-nums; color: var(--text-muted); }
-.agent-key { grid-area: key; justify-self: end; display: grid; place-items: center; min-width: 20px; height: 19px; padding: 0 5px; border-radius: 5px; border: 1px solid var(--line-strong); background: rgba(255, 255, 255, .05); font: 650 11.5px/1 var(--font); color: var(--text); background: rgba(255, 255, 255, .09); }
+.agent-key { grid-area: key; justify-self: end; display: grid; place-items: center; min-width: 24px; height: 21px; padding: 0 6px; border-radius: 6px; border: 1px solid var(--line-strong); background: rgba(255, 255, 255, .05); font: 650 12.5px/1 var(--font); color: var(--text); background: rgba(255, 255, 255, .09); }
 .agent-key:empty { display: none; }
 .agent.selected .agent-key, .agent:hover .agent-key { color: var(--text); border-color: var(--line-strong); }
 .agent-abbr { display: none; }
@@ -404,22 +404,23 @@ aside {
 .conversation-title { min-width: 0; }
 .conversation-header strong { display: block; font-size: 18px; line-height: 1.25; font-weight: 720; letter-spacing: -.3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .subtitle { margin-top: 3px; font: 500 13.5px/1.3 var(--font); color: var(--text-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#chips { display: flex; gap: 6px; min-width: 0; overflow: hidden; }
+/* The agent's status line, read like Claude Code's own: model · mode · context. */
+#chips { display: flex; align-items: center; gap: 0; min-width: 0; overflow: hidden; }
 #chips .chip {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   height: 26px;
-  padding: 0 9px;
-  border-radius: 7px;
-  border: 1px solid var(--line-strong);
-  background: linear-gradient(rgba(255, 255, 255, .08), rgba(255, 255, 255, .035));
-  box-shadow: var(--hl);
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  letter-spacing: 0;
   color: var(--text-soft);
-  font: 650 var(--text-xs)/1 var(--font);
+  font: 600 13px/1 var(--font);
   white-space: nowrap;
 }
-#chips .chip.model { color: var(--accent-hi); border-color: var(--accent-line); background: var(--accent-soft); }
+#chips .chip + .chip::before { content: "·"; margin: 0 10px; color: var(--text-faint); font-weight: 700; }
+#chips .chip.model { color: var(--accent-hi); }
 #chips .chip.mode { color: #d5c8ff; }
 .meter { width: 32px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, .12); overflow: hidden; }
 .meter span { display: block; height: 100%; border-radius: 2px; background: var(--done); }

@@ -57,7 +57,7 @@ test('a permission toast names the command, its answers and how many agents wait
   p.roster([agent('a','blocked'),agent('b','blocked')]);
   p.messages.length=0;p.window.receive({type:'alertPreview',data:{id:'a',title:'a needs input',tone:'blocked',text:fs.readFileSync(path.join(__dirname,'fixtures/claude-permission.txt'),'utf8'),provider:'claude'}});
   const [toast]=ops(p.messages,'alert');
-  assert.equal(toast.preview,'⚠ Bash command: rm -rf build/');assert.match(toast.answers,/^1 Yes · 2 Always · 3 No/);assert.equal(toast.waiting,2);assert.equal(toast.danger,true);
+  assert.equal(toast.preview,'⚠ Bash command: rm -rf build/');assert.equal(toast.answers,'1 Yes · 3 No');assert.equal(toast.waiting,2);assert.equal(toast.danger,true);
 });
 test('later alerts update the toast; answered ones shrink it, then clear it',()=>{
   const p=page();p.roster([agent('a','working'),agent('b','working')]);

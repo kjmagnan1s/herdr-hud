@@ -82,8 +82,9 @@ function renderRoster(){
 function dialogSummary(d){return d.type==='permission'&&d.detail?`${HUDModel.risky(d)?'⚠ ':''}${d.title}: ${d.detail.split('\n')[0]}`:d.question||d.title;}
 function quickAnswers(a,metadata){
   const d=metadata.dialog;if(!a.online||status(a)!=='blocked'||!d?.question||answered.get(a.id)===d.question)return null;
-  const options=(d.options||[]).filter(o=>o.n<=9&&!/^(Type something|Chat about this)/i.test(o.label));if(!options.length)return null;
-  const danger=HUDModel.risky(d),row=el('div',undefined,'quick'+(danger?' danger':''));
+  // A destructive command is never offered "don't ask again" outside the full dialog.
+  const danger=HUDModel.risky(d),options=(d.options||[]).filter(o=>o.n<=9&&!/^(Type something|Chat about this)/i.test(o.label)&&!(danger&&/don.t ask again/i.test(o.label)));if(!options.length)return null;
+  const row=el('div',undefined,'quick'+(danger?' danger':''));
   for(const o of options.slice(0,3)){const b=el('button',undefined,'quick-answer'+(/^(no\b|cancel)/i.test(o.label)?' deny':o.n===1?(danger?' caution':' primary'):''));b.type='button';b.disabled=answering;b.title=`${o.n}. ${o.label}`;b.append(el('kbd',String(o.n)),el('span',o.label.replace(/\s*\(esc\)$/i,'').replace(/^Yes, and don.t ask again.*$/i,'Always').replace(/^No, and .*$/i,'No').slice(0,28),'quick-label'));b.onclick=()=>answer(a.id,o,d.question);row.append(b);}
   return row;
 }
@@ -196,7 +197,7 @@ window.receive=({type,data})=>{
     const waiting=[...alerted].find(([id,tone])=>tone==='blocked'&&agents.some(a=>a.id===id))?.[0];alerted.clear();if(waiting&&waiting!==selected)select(waiting);renderHeader();wantSelected=true;read();}}
   else if(type==='resetBaseline'){baseline=false;}
   else if(type==='select'){select(data.id);}
-  else if(type==='alertPreview'){if(!opened){const parsed=HUDModel.parse(data.text,data.provider),reply=parsed.dialog?[parsed.dialog.title,parsed.dialog.question].filter(Boolean).join(': '):parsed.blocks.filter(x=>x.kind==='reply').at(-1)?.text||'';const answers=parsed.dialog?.question?(parsed.dialog.options||[]).filter(o=>o.n<=9&&!/^(Type something|Chat about this)/i.test(o.label)).slice(0,3).map(o=>`${o.n} ${o.label.replace(/\s*\(esc\)$/i,'').replace(/^Yes, and don.t ask again.*$/i,'Always').replace(/^No, and .*$/i,'No').slice(0,18)}`).join(' · '):'';
+  else if(type==='alertPreview'){if(!opened){const parsed=HUDModel.parse(data.text,data.provider),reply=parsed.dialog?[parsed.dialog.title,parsed.dialog.question].filter(Boolean).join(': '):parsed.blocks.filter(x=>x.kind==='reply').at(-1)?.text||'';const answers=parsed.dialog?.question?(parsed.dialog.options||[]).filter(o=>o.n<=9&&!/^(Type something|Chat about this)/i.test(o.label)&&!(HUDModel.risky(parsed.dialog)&&/don.t ask again/i.test(o.label))).slice(0,3).map(o=>`${o.n} ${o.label.replace(/\s*\(esc\)$/i,'').replace(/^Yes, and don.t ask again.*$/i,'Always').replace(/^No, and .*$/i,'No').slice(0,18)}`).join(' · '):'';
 post({op:'alert',id:data.id,title:data.title,tone:data.tone,preview:(parsed.dialog?dialogSummary(parsed.dialog):reply).replace(/\s+/g,' ').slice(0,200)||'Click to read the latest output',answers,danger:HUDModel.risky(parsed.dialog),waiting:agents.filter(x=>x.online&&status(x)==='blocked').length});}}
   else if(type==='output'){
     reading=false;if(data.error){if(data.id===selected)notice(data.error);else failed.add(data.id);if(wantSelected)read();else prefetch();return;}
