@@ -49,6 +49,7 @@ sealed class Preferences
     public string Mode { get; set; } = "chat";
     public double RosterWidth { get; set; } = 220;
     public bool Visible { get; set; } = true;
+    public bool AgentStrip { get; set; }
     public int ShortcutMode { get; set; }
     public int X { get; set; } = 32;
     public int Y { get; set; } = 180;
@@ -102,7 +103,9 @@ sealed class Bubble : Form
     // input, blue unread. An amber arc turns around the ring while agents work.
     public int Count; public string Tone = ""; public bool Working;
     float spin; readonly System.Windows.Forms.Timer spinner = new() { Interval = 50 };
-    public static readonly Color Red = Color.FromArgb(255,107,107), Blue = Color.FromArgb(106,169,255), Amber = Color.FromArgb(242,184,75);
+    public static readonly Color Red = Color.FromArgb(255,107,114), Blue = Color.FromArgb(94,169,255), Amber = Color.FromArgb(245,181,68);
+    // Claude's terracotta, matching the panel's accent.
+    public static readonly Color Accent = Color.FromArgb(232,135,95), AccentHi = Color.FromArgb(245,169,134), BadgeRed = Color.FromArgb(255,77,87), BadgeBlue = Color.FromArgb(61,139,255);
     public Rectangle BadgeBounds
     {
         get { float scale = ClientSize.Width / 64f; return new Rectangle((int)Math.Round(41*scale), (int)Math.Round(3*scale), (int)Math.Round(20*scale), (int)Math.Round(20*scale)); }
@@ -116,12 +119,19 @@ sealed class Bubble : Form
         spinner.Enabled = working && SystemInformation.UIEffectsEnabled;
         UpdateShape(); Invalidate();
     }
+    public static GraphicsPath Rounded(RectangleF r, float radius)
+    {
+        var path = new GraphicsPath(); float d = radius*2;
+        path.AddArc(r.X, r.Y, d, d, 180, 90); path.AddArc(r.Right-d, r.Y, d, d, 270, 90);
+        path.AddArc(r.Right-d, r.Bottom-d, d, d, 0, 90); path.AddArc(r.X, r.Bottom-d, d, d, 90, 90);
+        path.CloseFigure(); return path;
+    }
     void UpdateShape()
     {
         if (ClientSize.Width <= 0 || ClientSize.Height <= 0) return;
-        // Winding fill unions the overlapping circles instead of cutting a hole.
-        using var path = new GraphicsPath(FillMode.Winding);
-        path.AddEllipse(ClientRectangle);
+        // Winding fill unions the rounded tile and the badge instead of cutting a hole.
+        float scale = ClientSize.Width / 64f;
+        using var path = Rounded(new RectangleF(1*scale, 1*scale, 62*scale, 62*scale), 21*scale); path.FillMode = FillMode.Winding;
         if (Count > 0) path.AddEllipse(BadgeBounds);
         var old = Region; Region = new Region(path); old?.Dispose();
     }
@@ -132,7 +142,7 @@ sealed class Bubble : Form
     {
         Text = "Herdr HUD H Button"; AccessibleName = "Herdr HUD. Click to open agents; drag to move.";
         FormBorderStyle = FormBorderStyle.None; ShowInTaskbar = false; TopMost = true;
-        Size = new Size(64, 64); BackColor = Color.FromArgb(24, 27, 34); DoubleBuffered = true;
+        Size = new Size(64, 64); BackColor = Color.FromArgb(16, 18, 22); DoubleBuffered = true;
         Cursor = Cursors.Hand;
         spinner.Tick += (_, _) => { spin = (spin + 7.5f) % 360; Invalidate(); };
     }
@@ -144,24 +154,34 @@ sealed class Bubble : Form
     {
         base.OnPaint(e); var g = e.Graphics; g.SmoothingMode = SmoothingMode.AntiAlias;
         float scale = ClientSize.Width / 64f;
-        var ring = new RectangleF(2*scale, 2*scale, Width-5*scale, Height-5*scale);
+        // An app tile in Claude's terracotta, like the panel's brand mark, inside
+        // a thin accent ring that turns red with a glow while an agent needs input.
+        var tile = new RectangleF(7*scale, 7*scale, 50*scale, 50*scale);
+        using (var shape = Rounded(tile, 14*scale))
+        using (var fill = new LinearGradientBrush(tile, Color.FromArgb(242,153,112), Color.FromArgb(201,94,58), LinearGradientMode.Vertical)) g.FillPath(fill, shape);
+        var outline = new RectangleF(4.25f*scale, 4.25f*scale, 55.5f*scale, 55.5f*scale);
+        using var ring = Rounded(outline, 16.75f*scale);
         if (Tone == "blocked")
         {
-            // Needs input wins: a red ring with a soft inner glow.
-            for (int i = 3; i >= 1; i--) { using var glow = new Pen(Color.FromArgb(40, Red), (2+i*2)*scale); g.DrawEllipse(glow, ring); }
-            using var red = new Pen(Red, 2*scale); g.DrawEllipse(red, ring);
+            for (int i = 3; i >= 1; i--) { using var glow = new Pen(Color.FromArgb(40, Red), (2+i*2)*scale); g.DrawPath(glow, ring); }
+            using var red = new Pen(Red, 2*scale); g.DrawPath(red, ring);
         }
-        else { using var pen = new Pen(Color.FromArgb(233, 184, 92), 2*scale); g.DrawEllipse(pen, ring); }
-        if (Working) { using var arc = new Pen(Amber, 3*scale) { StartCap = LineCap.Round, EndCap = LineCap.Round }; g.DrawArc(arc, ring, spin - 90, 100); }
-        using var font = new Font("Segoe UI", Height * .40f, FontStyle.Bold, GraphicsUnit.Pixel);
-        TextRenderer.DrawText(g, "H", font, ClientRectangle, Color.FromArgb(247, 201, 110), TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+        else { using var pen = new Pen(Color.FromArgb(140, AccentHi), 1.5f*scale); g.DrawPath(pen, ring); }
+        if (Working)
+        {
+            // A short amber dash runs around the outline; the offset walks it along.
+            using var dash = new Pen(Amber, 2.5f*scale) { DashCap = DashCap.Round, DashPattern = new[] { 13f, 65f }, DashOffset = spin / 360f * 78f };
+            g.DrawPath(dash, ring);
+        }
+        using var font = new Font("Segoe UI Black", Height * .36f, FontStyle.Regular, GraphicsUnit.Pixel);
+        TextRenderer.DrawText(g, "H", font, ClientRectangle, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
         if (Count > 0)
         {
             var rect = BadgeBounds; bool red = Tone == "blocked";
-            using var fill = new SolidBrush(red ? Red : Blue); g.FillEllipse(fill, rect);
+            using var fill = new SolidBrush(red ? BadgeRed : BadgeBlue); g.FillEllipse(fill, rect);
             using var border = new Pen(BackColor, 2*scale); g.DrawEllipse(border, rect);
             using var badgeFont = new Font("Segoe UI", 10*scale, FontStyle.Bold, GraphicsUnit.Pixel);
-            TextRenderer.DrawText(g, Math.Min(Count, 9).ToString(), badgeFont, rect, red ? Color.FromArgb(42,11,11) : Color.FromArgb(11,26,46), TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+            TextRenderer.DrawText(g, Math.Min(Count, 9).ToString(), badgeFont, rect, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
         }
     }
     protected override void OnMouseDown(MouseEventArgs e) { base.OnMouseDown(e); if (e.Button != MouseButtons.Left) return; pressed = true; dragging = false; down = Cursor.Position; origin = Location; Capture = true; }
@@ -180,6 +200,100 @@ sealed class Bubble : Form
     }
 }
 
+// Off by default. Like a voice overlay's member row: one tile per agent beside
+// the H while the panel is closed, so state reads at a glance during play.
+sealed class AgentStrip : Form
+{
+    public Action<string>? Pick;
+    public List<JsonObject> Agents = new(); public string Label = "";
+    readonly List<(string id, RectangleF rect)> tiles = new();
+    protected override bool ShowWithoutActivation => true;
+    protected override CreateParams CreateParams { get { var p = base.CreateParams; p.ExStyle |= 0x08000000 | 0x80; return p; } }
+    public AgentStrip()
+    {
+        Text = "Herdr HUD Agent Strip"; FormBorderStyle = FormBorderStyle.None; ShowInTaskbar = false; TopMost = true;
+        StartPosition = FormStartPosition.Manual; AutoScaleMode = AutoScaleMode.None; BackColor = Color.FromArgb(17,19,24); DoubleBuffered = true; Cursor = Cursors.Hand;
+    }
+    float Dpi => DeviceDpi / 96f;
+    Font LabelFont() => new("Segoe UI Semibold", 12.5f*Dpi, FontStyle.Regular, GraphicsUnit.Pixel);
+    static Font NameFont(float dpi) => new("Segoe UI Semibold", 13f*dpi, FontStyle.Regular, GraphicsUnit.Pixel);
+    // Agents that need you or are working carry their name; ready ones stay a tile.
+    static string? Name(JsonObject agent)
+    {
+        if (agent.Text("state") is not ("blocked" or "working" or "unread")) return null;
+        var text = agent.Text("name"); return text.Length > 18 ? text[..17] + "…" : text;
+    }
+    static int Rank(string state) => state switch { "blocked" => 0, "unread" => 1, "working" => 2, _ => 3 };
+    // Left to right: the "needs you" label, then tiles with a hairline between state groups.
+    (float width, List<float> tiles, List<float> separators) Plan()
+    {
+        float s = Dpi, x = 10*s; var xs = new List<float>(); var seps = new List<float>(); int last = -1;
+        if (Label.Length > 0) { using var font = LabelFont(); x += TextRenderer.MeasureText(Label, font).Width + 8*s; }
+        foreach (var agent in Agents)
+        {
+            int rank = Rank(agent.Text("state"));
+            if (last >= 0 && rank != last) { seps.Add(x); x += 9*s; }
+            xs.Add(x); x += 36*s; last = rank;
+            if (Name(agent) is string name) { using var font = NameFont(s); x += TextRenderer.MeasureText(name, font, Size.Empty, TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix).Width + 11*s; }
+        }
+        return (x + 2*s, xs, seps);
+    }
+    public Size Measure() => new((int)Math.Ceiling(Plan().width), (int)Math.Round(44*Dpi));
+    static Color Hsl(double h, double s, double l)
+    {
+        h = ((h % 360) + 360) % 360; double c = (1-Math.Abs(2*l-1))*s, x = c*(1-Math.Abs(h/60%2-1)), m = l-c/2;
+        var (r, g, b) = h < 60 ? (c,x,0d) : h < 120 ? (x,c,0d) : h < 180 ? (0d,c,x) : h < 240 ? (0d,x,c) : h < 300 ? (x,0d,c) : (c,0d,x);
+        return Color.FromArgb((int)Math.Round((r+m)*255), (int)Math.Round((g+m)*255), (int)Math.Round((b+m)*255));
+    }
+    protected override void OnSizeChanged(EventArgs e)
+    {
+        base.OnSizeChanged(e); if (ClientSize.Width <= 0 || ClientSize.Height <= 0) return;
+        using var path = Bubble.Rounded(new RectangleF(0, 0, ClientSize.Width, ClientSize.Height), 14*Dpi); var old = Region; Region = new Region(path); old?.Dispose();
+    }
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        base.OnPaint(e); var g = e.Graphics; g.SmoothingMode = SmoothingMode.AntiAlias; float s = Dpi, mid = ClientSize.Height/2f;
+        using (var edge = Bubble.Rounded(new RectangleF(0.5f, 0.5f, ClientSize.Width-1, ClientSize.Height-1), 14*s)) using (var pen = new Pen(Color.FromArgb(26,255,255,255))) g.DrawPath(pen, edge);
+        var plan = Plan();
+        if (Label.Length > 0) { using var font = LabelFont(); TextRenderer.DrawText(g, Label, font, new Rectangle((int)(10*s), 0, (int)(plan.tiles.FirstOrDefault(ClientSize.Width)-10*s), ClientSize.Height), Color.FromArgb(255,179,183), TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.Left); }
+        using (var line = new SolidBrush(Color.FromArgb(31,255,255,255))) foreach (var x in plan.separators) g.FillRectangle(line, x, mid-11*s, 1*s, 22*s);
+        tiles.Clear();
+        using var initials = new Font("Segoe UI Black", 10.5f*s, FontStyle.Regular, GraphicsUnit.Pixel);
+        for (int i = 0; i < Agents.Count && i < plan.tiles.Count; i++)
+        {
+            var agent = Agents[i]; string state = agent.Text("state"); double hue = agent["hue"]?.GetValue<double>() ?? 0;
+            var rect = new RectangleF(plan.tiles[i], mid-14*s, 28*s, 28*s); var hit = rect;
+            if (Name(agent) is string name)
+            {
+                using var font = NameFont(s); var size = TextRenderer.MeasureText(name, font, Size.Empty, TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
+                TextRenderer.DrawText(g, name, font, new Point((int)(rect.Right+7*s), (int)(mid-size.Height/2f)), Color.FromArgb(238,240,243), TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
+                hit.Width += size.Width + 7*s;
+            }
+            tiles.Add((agent.Text("id"), hit));
+            Color? ring = state switch { "blocked" => Bubble.Red, "working" => Color.FromArgb(217, Bubble.Amber), "unread" => Bubble.Blue, _ => null };
+            if (ring is Color tone) { using var outer = Bubble.Rounded(RectangleF.Inflate(rect, 2.75f*s, 2.75f*s), 10*s); using var pen = new Pen(tone, 1.5f*s); g.DrawPath(pen, outer); }
+            int alpha = state is "idle" or "done" or "offline" ? 209 : 255;
+            Color top = state == "offline" ? Color.FromArgb(115,115,115) : Hsl(hue, .60, .56), bottom = state == "offline" ? Color.FromArgb(64,64,64) : Hsl(hue+24, .54, .36);
+            using (var shape = Bubble.Rounded(rect, 8*s))
+            using (var fill = new LinearGradientBrush(rect, Color.FromArgb(alpha, top), Color.FromArgb(alpha, bottom), 70f))
+            using (var pen = new Pen(Color.FromArgb(alpha*16/100, 255,255,255))) { g.FillPath(fill, shape); g.DrawPath(pen, shape); }
+            TextRenderer.DrawText(g, agent.Text("initials"), initials, Rectangle.Round(rect), Color.FromArgb(alpha, 255,255,255), TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix);
+        }
+        AccessibleName = (Label.Length > 0 ? Label + ". " : "") + "Agents: " + string.Join(", ", Agents.Select(a => a.Text("name") + " " + a.Text("state"))) + ". Click one to open it.";
+    }
+    protected override void OnMouseUp(MouseEventArgs e)
+    {
+        base.OnMouseUp(e); if (e.Button != MouseButtons.Left) return;
+        string id = tiles.FirstOrDefault(t => RectangleF.Inflate(t.rect, 4*Dpi, 8*Dpi).Contains(e.Location)).id ?? tiles.FirstOrDefault().id ?? "";
+        Pick?.Invoke(id);
+    }
+    protected override void WndProc(ref Message m)
+    {
+        if (m.Msg == 0x21) { m.Result = new IntPtr(3); return; } // Click without stealing the game's focus.
+        base.WndProc(ref m);
+    }
+}
+
 sealed class AgentPanel : Form
 {
     public bool AllowQuit;
@@ -188,7 +302,7 @@ sealed class AgentPanel : Form
     public AgentPanel()
     {
         Text = "Herdr HUD Agents"; FormBorderStyle = FormBorderStyle.None; ShowInTaskbar = false; TopMost = true;
-        Size = new Size(940, 650); MinimumSize = new Size(640, 430); BackColor = Color.FromArgb(39, 44, 55); Padding = new Padding(5);
+        Size = new Size(960, 740); MinimumSize = new Size(640, 430); BackColor = Color.FromArgb(16, 18, 22); Padding = new Padding(5);
     }
     protected override void OnFormClosing(FormClosingEventArgs e) { if (!AllowQuit && e.CloseReason == CloseReason.UserClosing) { e.Cancel = true; CloseRequested?.Invoke(); } base.OnFormClosing(e); }
     protected override void WndProc(ref Message m)
@@ -213,7 +327,7 @@ sealed class SilentToast : Form
 sealed class HUDContext : ApplicationContext
 {
     readonly Preferences prefs = Preferences.Load();
-    readonly Bubble bubble = new(); readonly AgentPanel panel = new(); readonly WebView2 web = new();
+    readonly Bubble bubble = new(); readonly AgentPanel panel = new(); readonly WebView2 web = new(); readonly AgentStrip strip = new();
     // Roster checks, output reads and sends each get their own lane, so a slow or
     // offline machine never delays opening an agent or a send.
     readonly NotifyIcon tray = new(); readonly SemaphoreSlim transport = new(1), reads = new(1), sends = new(1);
@@ -240,15 +354,16 @@ sealed class HUDContext : ApplicationContext
         // Sizes are design units; WebView2 renders CSS using the monitor DPI.
         float scale = panel.DeviceDpi / 96f;
         panel.MinimumSize = new Size((int)(640*scale), (int)(430*scale));
-        panel.Size = new Size((int)(940*scale), (int)(650*scale));
+        panel.Size = new Size((int)(960*scale), (int)(740*scale));
         bubble.Size = new Size((int)(64*scale), (int)(64*scale));
         using var bitmap = new Bitmap(32, 32);
         using (var g = Graphics.FromImage(bitmap)) { g.Clear(Color.FromArgb(24,27,34)); using var font = new Font("Segoe UI", 23, FontStyle.Bold, GraphicsUnit.Pixel); g.DrawString("H", font, Brushes.Goldenrod, 2, 0); }
         var handle = bitmap.GetHicon(); using var original = Icon.FromHandle(handle); tray.Icon = (Icon)original.Clone(); Native.DestroyIcon(handle);
         tray.Text = "Herdr HUD"; tray.Visible = true; tray.DoubleClick += (_, _) => TogglePanel();
-        bubble.LocationChanged += (_, _) => PositionToast();
+        bubble.LocationChanged += (_, _) => { PositionToast(); PositionStrip(); };
+        strip.Pick = id => { OpenPanel(); if (id.Length > 0) Emit("select", new() { ["id"] = id }); };
         BuildMenu(); RestorePosition(); RegisterHotkeys();
-        foregroundCallback = (_, _, _, _, _, _, _) => { if (!quitting && prefs.Visible) bubble.BeginInvoke(() => { Native.Raise(panel); if (toast is not null) Native.Raise(toast); Native.Raise(bubble); }); };
+        foregroundCallback = (_, _, _, _, _, _, _) => { if (!quitting && prefs.Visible) bubble.BeginInvoke(() => { Native.Raise(panel); Native.Raise(strip); if (toast is not null) Native.Raise(toast); Native.Raise(bubble); }); };
         foregroundHook = Native.SetWinEventHook(3,3,IntPtr.Zero,foregroundCallback,0,0,0);
         if (prefs.Visible) bubble.Show();
         timer.Tick += async (_, _) => await Tick(); timer.Start();
@@ -353,6 +468,9 @@ sealed class HUDContext : ApplicationContext
                 if (data["selectedAgent"] is JsonValue && data.Text("selectedAgent").Length <= 8192) prefs.SelectedAgent = data.Text("selectedAgent");
                 if (data["rosterWidth"] is JsonValue value && value.TryGetValue<double>(out var width) && width is >=56 and <=600) prefs.RosterWidth = width;
                 if (data.Text("mode") is "chat" or "terminal") prefs.Mode = data.Text("mode"); prefs.Save(); break;
+            case "strip":
+                strip.Agents = (data["agents"] as JsonArray ?? new()).OfType<JsonObject>().Take(8).Select(a => (JsonObject)a.DeepClone()).ToList();
+                strip.Label = data.Text("label"); if (strip.Label.Length > 40) strip.Label = strip.Label[..40]; UpdateStrip(); break;
             case "badge": bubble.SetBadge(data["count"]?.GetValue<int>() ?? 0, data.Text("tone"), (data["working"]?.GetValue<int>() ?? 0) > 0); break;
             case "alertPreview":
                 if (panel.Visible || !prefs.Visible) break;
@@ -381,6 +499,9 @@ sealed class HUDContext : ApplicationContext
         var menu = new ContextMenuStrip();
         menu.Items.Add("Open / close agents", null, (_, _) => TogglePanel());
         menu.Items.Add("Show / hide HUD", null, (_, _) => ToggleVisibility());
+        var stripItem = new ToolStripMenuItem("Show agent strip beside H") { Checked = prefs.AgentStrip };
+        stripItem.Click += (_, _) => { prefs.AgentStrip = !prefs.AgentStrip; prefs.Save(); UpdateStrip(); BuildMenu(); };
+        menu.Items.Add(stripItem);
         menu.Items.Add("Refresh", null, async (_, _) => await Refresh());
         menu.Items.Add("Herdr connection…", null, (_, _) => Connection());
         var shortcuts = new ToolStripMenuItem("Shortcuts");
@@ -407,13 +528,13 @@ sealed class HUDContext : ApplicationContext
     void OpenPanel()
     {
         if (!panel.Visible) previousForeground = Native.GetForegroundWindow();
-        prefs.Visible = true; prefs.Save(); bubble.Show(); PositionPanel(); HideToast();
+        prefs.Visible = true; prefs.Save(); bubble.Show(); PositionPanel(); HideToast(); strip.Hide();
         panel.Show(); panel.Activate(); web.Focus(); Native.Raise(bubble); Emit("visibility", new() { ["open"] = true }); _ = Refresh(); Diagnostics();
     }
     void ClosePanel()
     {
         bool restore = Native.GetAncestor(Native.GetForegroundWindow(), 2) == panel.Handle;
-        panel.Hide(); Emit("visibility", new() { ["open"] = false });
+        panel.Hide(); UpdateStrip(); Emit("visibility", new() { ["open"] = false });
         if (restore && Native.IsWindow(previousForeground)) Native.SetForegroundWindow(previousForeground);
         Diagnostics();
     }
@@ -421,7 +542,7 @@ sealed class HUDContext : ApplicationContext
     {
         prefs.Visible = !prefs.Visible; prefs.Save();
         if (prefs.Visible) { bubble.Show(); _ = Refresh(); } else { ClosePanel(); bubble.Hide(); HideToast(); lastEmitted = ""; Emit("resetBaseline", new()); }
-        Diagnostics();
+        UpdateStrip(); Diagnostics();
     }
     void RestorePosition()
     {
@@ -445,7 +566,22 @@ sealed class HUDContext : ApplicationContext
         int x = bubble.Right+12; if (x+panel.Width > r.Right) x = bubble.Left-panel.Width-12;
         panel.Location = new Point(Math.Clamp(x, r.Left+8, Math.Max(r.Left+8, r.Right-panel.Width-8)), Math.Clamp(bubble.Top, r.Top+8, Math.Max(r.Top+8, r.Bottom-panel.Height-8)));
     }
-    void DisplaysChanged(object? sender, EventArgs e) { if (!quitting) bubble.BeginInvoke(() => { RestorePosition(); PositionPanel(); PositionToast(); }); }
+    void DisplaysChanged(object? sender, EventArgs e) { if (!quitting) bubble.BeginInvoke(() => { RestorePosition(); PositionPanel(); PositionToast(); PositionStrip(); }); }
+    void UpdateStrip()
+    {
+        if (!prefs.AgentStrip || !prefs.Visible || panel.Visible || strip.Agents.Count == 0) { strip.Hide(); return; }
+        strip.Size = strip.Measure(); PositionStrip(); strip.Invalidate();
+        if (!strip.Visible) { strip.Show(); Native.Raise(strip); Native.Raise(bubble); }
+    }
+    // Beside the H on the side facing the screen's center, vertically centered on it.
+    void PositionStrip()
+    {
+        if (!strip.Visible && strip.Agents.Count == 0) return;
+        var area = Screen.FromRectangle(bubble.Bounds).WorkingArea; int gap = (int)Math.Round(8*bubble.DeviceDpi/96f);
+        int x = bubble.Left + bubble.Width/2 > area.Left + area.Width/2 ? bubble.Left-gap-strip.Width : bubble.Right+gap;
+        int y = bubble.Top + (bubble.Height-strip.Height)/2;
+        strip.Location = new Point(Math.Clamp(x,area.Left,Math.Max(area.Left,area.Right-strip.Width)), Math.Clamp(y,area.Top,Math.Max(area.Top,area.Bottom-strip.Height)));
+    }
     // One toast at a time. A newer alert updates it in place instead of replacing
     // it; "update" only refreshes a toast that is already showing. Needs-input
     // toasts stay until opened or dismissed; others fade after 6 s unless hovered.
@@ -457,9 +593,9 @@ sealed class HUDContext : ApplicationContext
         int Px(int value) => (int)Math.Round(value*scale);
         if (toast is null)
         {
-            toast = new SilentToast { Text = "Herdr HUD Agent Update", FormBorderStyle = FormBorderStyle.None, ShowInTaskbar = false, TopMost = true, BackColor = Color.FromArgb(8,10,20), Size = new Size(Px(330), Px(110)) };
+            toast = new SilentToast { Text = "Herdr HUD Agent Update", FormBorderStyle = FormBorderStyle.None, ShowInTaskbar = false, TopMost = true, BackColor = Color.FromArgb(17,19,24), Size = new Size(Px(380), Px(124)) };
             toastStripe = new Panel { Dock = DockStyle.Left, Width = Px(4) };
-            toastText = new Label { ForeColor = Color.FromArgb(196,192,182), Padding = new Padding(Px(12),Px(12),Px(38),Px(12)), Dock = DockStyle.Fill, Cursor = Cursors.Hand, UseMnemonic = false };
+            toastText = new Label { ForeColor = Color.FromArgb(220,223,228), Padding = new Padding(Px(12),Px(12),Px(38),Px(12)), Dock = DockStyle.Fill, Cursor = Cursors.Hand, UseMnemonic = false };
             toastText.Paint += PaintToastTitle;
             toastText.Click += (_, _) => { string id = toastAgent; OpenPanel(); Emit("select", new() { ["id"] = id }); };
             var close = new Button { Text = "×", Width = Px(28), Height = Px(28), Left = toast.ClientSize.Width-Px(30), Top = Px(2), Anchor = AnchorStyles.Top | AnchorStyles.Right, FlatStyle = FlatStyle.Flat, ForeColor = Color.WhiteSmoke }; close.FlatAppearance.BorderSize = 0; close.Click += (_, _) => HideToast();
@@ -471,7 +607,7 @@ sealed class HUDContext : ApplicationContext
         toastAgent = data.Text("id"); toastSticky = data.Text("tone") == "blocked";
         toastStripe!.BackColor = toastSticky ? Bubble.Red : Bubble.Blue;
         // The title line is painted in the state color; the label holds the preview below it.
-        toastText!.Tag = data.Text("title"); toastText.Text = "\n\n" + data.Text("preview"); toastText.Invalidate();
+        toastText!.Tag = data.Text("title"); toastText.Text = "\n\n" + data.Text("preview") + (data.Text("answers").Length > 0 ? "\nOpen with the shortcut, then press " + data.Text("answers") : ""); toastText.Invalidate();
         toastTimer?.Dispose(); toastTimer = null;
         if (!toastSticky)
         {
@@ -495,6 +631,8 @@ sealed class HUDContext : ApplicationContext
         int x = bubble.Left + (bubble.Width-toast.Width)/2;
         int y = bubble.Top-toast.Height-gap;
         if (y < area.Top) y = bubble.Bottom+gap;
+        // Keep a small margin from the screen edge, like the gap from H.
+        area.Inflate(-Math.Min(gap*8/10, Math.Max(0,(area.Width-toast.Width)/2)), -Math.Min(gap*8/10, Math.Max(0,(area.Height-toast.Height)/2)));
         toast.Location = new Point(Math.Clamp(x,area.Left,Math.Max(area.Left,area.Right-toast.Width)), Math.Clamp(y,area.Top,Math.Max(area.Top,area.Bottom-toast.Height)));
     }
     void HideToast() { toastTimer?.Dispose(); toastTimer = null; toast?.Dispose(); toast = null; toastText = null; toastStripe = null; }
@@ -563,7 +701,7 @@ sealed class HUDContext : ApplicationContext
                 File.WriteAllText(Path.Combine(Program.Support, "ui-verification.json"), checkedUI); return JsonNode.Parse(checkedUI) as JsonObject ?? new();
             case "preview-alert":
                 var foreground = Native.GetForegroundWindow();
-                ShowToast(new() { ["id"] = prefs.SelectedAgent, ["title"] = "Notification preview", ["preview"] = "This notification stays beside H, wherever you move it." });
+                ShowToast(new() { ["id"] = prefs.SelectedAgent, ["title"] = "Notification preview", ["preview"] = "Alerts appear here, clear of H." });
                 await Task.Delay(250);
                 var preview = Diagnostics();
                 preview["focusUnchanged"] = Native.GetForegroundWindow() == foreground;

@@ -30,6 +30,14 @@ function page(){
 }
 const ops=(messages,op)=>messages.filter(m=>m.op===op).map(m=>JSON.parse(JSON.stringify(m)));
 
+test('the strip lists agents most urgent first and only posts when it changes',()=>{
+  const p=page();p.roster([agent('docs','idle'),agent('build','blocked'),agent('api','working')]);
+  const [first]=ops(p.messages,'strip');
+  assert.deepEqual(first.agents.map(t=>[t.id,t.state]),[['build','blocked'],['api','working'],['docs','idle']]);
+  assert.equal(first.label,'1 needs you');assert.equal(first.agents[0].initials,'BU');
+  assert.equal(ops(p.roster([agent('docs','idle'),agent('build','blocked'),agent('api','working')]),'strip').length,0);
+  assert.equal(ops(p.roster([agent('docs','idle'),agent('build','idle'),agent('api','working')]),'strip')[0].label,'1 working');
+});
 test('H badge counts needs input in red before unread in blue, and reports working',()=>{
   const p=page();p.roster([agent('a','working'),agent('b','working'),agent('c','idle')]);
   assert.deepEqual(ops(p.messages,'badge').at(-1),{op:'badge',count:0,tone:'',working:2});
@@ -51,6 +59,13 @@ test('a single alert reads a preview first and keeps its tone',()=>{
   assert.deepEqual(ops(sent,'alertPreview').map(m=>[m.id,m.title,m.tone]),[['a','a needs input','blocked']]);
   p.messages.length=0;p.window.receive({type:'alertPreview',data:{id:'a',title:'a needs input',tone:'blocked',text:'',provider:''}});
   assert.equal(ops(p.messages,'alert')[0].tone,'blocked');
+});
+test('a permission toast names the command, its answers and how many agents wait',()=>{
+  const p=page();p.roster([agent('a','working'),agent('b','blocked')]);
+  p.roster([agent('a','blocked'),agent('b','blocked')]);
+  p.messages.length=0;p.window.receive({type:'alertPreview',data:{id:'a',title:'a needs input',tone:'blocked',text:fs.readFileSync(path.join(__dirname,'fixtures/claude-permission.txt'),'utf8'),provider:'claude'}});
+  const [toast]=ops(p.messages,'alert');
+  assert.equal(toast.preview,'⚠ Bash command: rm -rf build/');assert.equal(toast.answers,'1 Yes · 3 No');assert.equal(toast.waiting,2);assert.equal(toast.danger,true);
 });
 test('later alerts update the toast; answered ones shrink it, then clear it',()=>{
   const p=page();p.roster([agent('a','working'),agent('b','working')]);

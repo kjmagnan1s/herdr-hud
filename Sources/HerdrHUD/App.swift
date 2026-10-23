@@ -8,11 +8,14 @@ final class OverlayPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 // State colors shared by the H and its alerts: red needs input, amber working,
-// blue new to read. They match the panel's palette.
+// blue new to read. They match the panel's palette; the accent is Claude's terracotta.
 enum Tone {
-    static let red = NSColor(srgbRed:1.00,green:0.42,blue:0.42,alpha:1), redInk = NSColor(srgbRed:0.16,green:0.04,blue:0.04,alpha:1)
-    static let blue = NSColor(srgbRed:0.42,green:0.66,blue:1.00,alpha:1), blueInk = NSColor(srgbRed:0.04,green:0.10,blue:0.18,alpha:1)
-    static let amber = NSColor(srgbRed:0.95,green:0.72,blue:0.29,alpha:1)
+    static let red = NSColor(srgbRed:1.00,green:0.42,blue:0.45,alpha:1), redInk = NSColor(srgbRed:1.00,green:0.82,blue:0.84,alpha:1)
+    static let blue = NSColor(srgbRed:0.37,green:0.66,blue:1.00,alpha:1), blueInk = NSColor(srgbRed:0.84,green:0.91,blue:1.00,alpha:1)
+    static let amber = NSColor(srgbRed:0.96,green:0.71,blue:0.27,alpha:1), green = NSColor(srgbRed:0.31,green:0.83,blue:0.58,alpha:1)
+    static let accent = NSColor(srgbRed:0.91,green:0.53,blue:0.37,alpha:1), accentHi = NSColor(srgbRed:0.96,green:0.66,blue:0.53,alpha:1)
+    static let badgeRed = NSColor(srgbRed:1.00,green:0.30,blue:0.34,alpha:1), badgeBlue = NSColor(srgbRed:0.24,green:0.55,blue:1.00,alpha:1)
+    static let ink = NSColor(srgbRed:0.06,green:0.07,blue:0.09,alpha:1)
 }
 final class BubbleView: NSView {
     weak var app: HUDApp?
@@ -24,44 +27,56 @@ final class BubbleView: NSView {
     let arc = CAShapeLayer()
     override init(frame: NSRect) {
         super.init(frame: frame); wantsLayer = true
-        // A short amber arc turns around the ring while any agent works. Core
-        // Animation runs it on the GPU; it is removed when nothing is working.
-        arc.frame = bounds; arc.path = CGPath(ellipseIn: bounds.insetBy(dx:2, dy:2), transform: nil)
-        arc.fillColor = nil; arc.strokeColor = Tone.amber.cgColor; arc.lineWidth = 3; arc.lineCap = .round
-        arc.strokeStart = 0; arc.strokeEnd = 0.28; arc.isHidden = true
+        // A short amber dash runs around the tile's outline while any agent works.
+        // Core Animation runs it on the GPU; it is removed when nothing is working.
+        arc.frame = bounds; arc.path = CGPath(roundedRect: bounds.insetBy(dx:3.5, dy:3.5), cornerWidth:18, cornerHeight:18, transform: nil)
+        arc.fillColor = nil; arc.strokeColor = Tone.amber.cgColor; arc.lineWidth = 2.5; arc.lineCap = .round
+        arc.lineDashPattern = [NSNumber(value:BubbleView.dash), NSNumber(value:Double(BubbleView.perimeter)-BubbleView.dash)]; arc.isHidden = true
         layer?.addSublayer(arc)
     }
     required init?(coder: NSCoder) { fatalError() }
+    // Outline length of the arc's rounded square: straight sides plus one full circle of corners.
+    static let perimeter = 4*(57.0-36)+2*Double.pi*18, dash = 34.0
     func updateArc() {
         arc.isHidden = !working; arc.removeAllAnimations()
         guard working, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
-        let spin = CABasicAnimation(keyPath:"transform.rotation.z")
-        spin.fromValue = 0; spin.toValue = -2 * Double.pi; spin.duration = 2.4; spin.repeatCount = .infinity
-        arc.anchorPoint = CGPoint(x:0.5, y:0.5); arc.position = CGPoint(x:bounds.midX, y:bounds.midY)
-        arc.add(spin, forKey:"spin")
+        let run = CABasicAnimation(keyPath:"lineDashPhase")
+        run.fromValue = 0; run.toValue = BubbleView.perimeter; run.duration = 2.4; run.repeatCount = .infinity
+        arc.add(run, forKey:"run")
     }
     override var acceptsFirstResponder: Bool { false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    // An app tile in Claude's terracotta, like the panel's brand mark, with a
+    // thin accent ring, or red with a glow while an agent needs input. The count
+    // sits in a pill.
     override func draw(_ dirtyRect: NSRect) {
-        NSColor(calibratedRed:0.09, green:0.10, blue:0.13, alpha:0.97).setFill()
-        let circle = NSBezierPath(ovalIn: bounds.insetBy(dx:4, dy:4)); circle.fill()
+        let tile = bounds.insetBy(dx:7, dy:7), shape = NSBezierPath(roundedRect:tile,xRadius:14,yRadius:14)
+        NSGraphicsContext.saveGraphicsState()
+        let drop = NSShadow(); drop.shadowColor = NSColor(white:0,alpha:0.55); drop.shadowBlurRadius = 8; drop.shadowOffset = NSSize(width:0,height:-3); drop.set()
+        Tone.accent.setFill(); shape.fill()
+        NSGraphicsContext.restoreGraphicsState()
+        NSGradient(starting:NSColor(srgbRed:0.79,green:0.37,blue:0.23,alpha:1),ending:NSColor(srgbRed:0.95,green:0.60,blue:0.44,alpha:1))?.draw(in:shape,angle:90)
+        NSColor(white:1,alpha:0.14).setStroke(); let rim = NSBezierPath(roundedRect:tile.insetBy(dx:0.5,dy:0.5),xRadius:13.5,yRadius:13.5); rim.lineWidth = 1; rim.stroke()
+        Tone.ink.withAlphaComponent(0.9).setStroke(); let gap = NSBezierPath(roundedRect:tile.insetBy(dx:-1,dy:-1),xRadius:15,yRadius:15); gap.lineWidth = 2; gap.stroke()
+        let ring = NSBezierPath(roundedRect:tile.insetBy(dx:-2.75,dy:-2.75),xRadius:16.75,yRadius:16.75)
         NSGraphicsContext.saveGraphicsState()
         if tone == "blocked" {
-            // Needs input wins: a red ring with a soft glow, like a debuff highlight.
-            let glow = NSShadow(); glow.shadowColor = Tone.red.withAlphaComponent(0.8); glow.shadowBlurRadius = 5; glow.set()
-            Tone.red.setStroke()
-        } else { NSColor(calibratedRed:0.91, green:0.72, blue:0.36, alpha:1).setStroke() }
-        circle.lineWidth = 2; circle.stroke()
+            let glow = NSShadow(); glow.shadowColor = Tone.red.withAlphaComponent(0.75); glow.shadowBlurRadius = 8; glow.set()
+            Tone.red.setStroke(); ring.lineWidth = 2
+        } else { Tone.accentHi.withAlphaComponent(0.55).setStroke(); ring.lineWidth = 1.5 }
+        ring.stroke()
         NSGraphicsContext.restoreGraphicsState()
-        let attrs: [NSAttributedString.Key:Any] = [.font:NSFont.systemFont(ofSize:28, weight:.bold), .foregroundColor:NSColor(calibratedRed:0.97,green:0.79,blue:0.43,alpha:1)]
-        ("H" as NSString).draw(at:NSPoint(x:20,y:16), withAttributes:attrs)
+        let shade = NSShadow(); shade.shadowColor = NSColor(srgbRed:0.3,green:0.08,blue:0,alpha:0.45); shade.shadowBlurRadius = 2; shade.shadowOffset = NSSize(width:0,height:-1)
+        let attrs: [NSAttributedString.Key:Any] = [.font:NSFont.systemFont(ofSize:24, weight:.heavy), .foregroundColor:NSColor.white, .shadow:shade]
+        let glyph = "H" as NSString, size = glyph.size(withAttributes:attrs)
+        glyph.draw(at:NSPoint(x:bounds.midX-size.width/2,y:bounds.midY-size.height/2), withAttributes:attrs)
         if count > 0 {
             let red = tone == "blocked", text = String(min(count,9)) as NSString
-            let font = NSFont.systemFont(ofSize:10,weight:.bold), size = text.size(withAttributes:[.font:font])
-            let badge = NSRect(x:42,y:42,width:19,height:19)
-            NSColor(calibratedRed:0.09, green:0.10, blue:0.13, alpha:1).setFill(); NSBezierPath(ovalIn:badge.insetBy(dx:-1.5,dy:-1.5)).fill()
-            (red ? Tone.red : Tone.blue).setFill(); NSBezierPath(ovalIn:badge).fill()
-            text.draw(at:NSPoint(x:badge.midX-size.width/2,y:badge.midY-size.height/2),withAttributes:[.font:font,.foregroundColor:red ? Tone.redInk : Tone.blueInk])
+            let font = NSFont.systemFont(ofSize:11,weight:.heavy), label = text.size(withAttributes:[.font:font])
+            let width = max(20, label.width+10), badge = NSRect(x:bounds.maxX-width-1,y:bounds.maxY-22,width:width,height:20)
+            Tone.ink.setFill(); NSBezierPath(roundedRect:badge.insetBy(dx:-2,dy:-2),xRadius:12,yRadius:12).fill()
+            (red ? Tone.badgeRed : Tone.badgeBlue).setFill(); NSBezierPath(roundedRect:badge,xRadius:10,yRadius:10).fill()
+            text.draw(at:NSPoint(x:badge.midX-label.width/2,y:badge.midY-label.height/2),withAttributes:[.font:font,.foregroundColor:NSColor.white])
         }
     }
     override func mouseDown(with event: NSEvent) { start = NSEvent.mouseLocation; origin = window?.frame.origin ?? .zero; dragged = false }
@@ -93,6 +108,7 @@ final class HUDApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKN
     var lastSnapshot: Row = [:], readBusy = false, selected = ""
     var promptIDs = Set<String>(), hotkeyWarning = ""
     var toast: NSPanel?, toastTimer: Timer?, toastHover = false
+    var strip: NSPanel?, stripView: StripView?, stripAgents: [Row] = [], stripLabel = ""
     var shortcuts: [NSMenuItem] = []
     static let channel = Notification.Name("org.herdr.community.hud.control")
     var support: URL { FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("Herdr HUD") }
@@ -100,7 +116,7 @@ final class HUDApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKN
         NSApp.setActivationPolicy(.accessory)
         try? FileManager.default.createDirectory(at:support,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])
         visible = defaults.object(forKey:"visible") == nil || defaults.bool(forKey:"visible")
-        panel = OverlayPanel(contentRect:NSRect(x:100,y:100,width:940,height:650), styleMask:[.borderless,.nonactivatingPanel,.resizable], backing:.buffered,defer:false)
+        panel = OverlayPanel(contentRect:NSRect(x:100,y:100,width:960,height:740), styleMask:[.borderless,.nonactivatingPanel,.resizable], backing:.buffered,defer:false)
         configure(panel); panel.title = "Herdr HUD Agents"; panel.minSize = NSSize(width:640,height:430)
         let config = WKWebViewConfiguration()
         config.userContentController.add(self,name:"hud")
@@ -153,6 +169,7 @@ final class HUDApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKN
         let menu = NSMenu()
         menu.addItem(menuItem("Open / close agents",#selector(togglePanel)))
         menu.addItem(menuItem("Show / hide H button",#selector(toggleVisibility)))
+        let stripItem = menuItem("Show agent strip beside H",#selector(toggleStrip(_:))); stripItem.state = defaults.bool(forKey:"agentStrip") ? .on : .off; menu.addItem(stripItem)
         menu.addItem(.separator())
         let root = NSMenuItem(title:"Keyboard shortcuts",action:nil,keyEquivalent:""), submenu = NSMenu()
         for (index,title) in ["⌘⌥H panel · ⌘⌥⇧H hide", "⌃⌥H panel · ⌃⌥⇧H hide", "Shortcuts off"].enumerated() {
@@ -164,6 +181,26 @@ final class HUDApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKN
         menu.addItem(menuItem("About Herdr HUD",#selector(about)))
         menu.addItem(.separator()); menu.addItem(menuItem("Quit Herdr HUD",#selector(quit)))
         status.menu = menu
+    }
+    @objc func toggleStrip(_ item: NSMenuItem) {
+        defaults.set(!defaults.bool(forKey:"agentStrip"),forKey:"agentStrip"); item.state = defaults.bool(forKey:"agentStrip") ? .on : .off; updateStrip()
+    }
+    // Off by default. Like a voice overlay's member row: one tile per agent beside
+    // the H while the panel is closed, so state reads at a glance during play.
+    func updateStrip() {
+        guard defaults.bool(forKey:"agentStrip"), visible, !panelOpen, !stripAgents.isEmpty, bubble != nil else { strip?.orderOut(nil); return }
+        if strip == nil {
+            let window = NSPanel(contentRect:NSRect(x:0,y:0,width:120,height:44),styleMask:[.borderless,.nonactivatingPanel],backing:.buffered,defer:false)
+            configure(window); window.title = "Herdr HUD Agent Strip"; window.level = bubble.level
+            let view = StripView(frame:window.contentView!.bounds); view.app = self; view.autoresizingMask = [.width,.height]
+            window.contentView = view; strip = window; stripView = view
+        }
+        stripView?.agents = stripAgents; stripView?.label = stripLabel
+        positionStrip(); strip?.orderFrontRegardless(); stripView?.needsDisplay = true
+    }
+    func positionStrip() {
+        guard let strip = strip, let view = stripView, bubble != nil, !NSScreen.screens.isEmpty else { return }
+        strip.setFrame(stripFrame(bubble:bubble.frame,size:NSSize(width:view.plan().width,height:44),visibleFrame:screenForBubble().visibleFrame),display:true)
     }
     @objc func changeShortcut(_ item: NSMenuItem) { defaults.set(item.tag,forKey:"shortcutMode"); registerHotkeys() }
     func registerHotkeys() {
@@ -202,15 +239,15 @@ final class HUDApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKN
     @objc func toggleVisibility() {
         visible.toggle(); defaults.set(visible,forKey:"visible")
         if visible { bubble.orderFrontRegardless(); refresh() } else { closePanel(); bubble.orderOut(nil); hideToast(); lastEmitted = ""; emit("resetBaseline",[:]) }
-        diagnostics()
+        updateStrip(); diagnostics()
     }
     @objc func togglePanel() { if panelOpen { closePanel() } else { openPanel() } }
     func openPanel() {
         visible = true; defaults.set(true,forKey:"visible"); panelOpen = true
         positionPanel(); bubble.orderFrontRegardless(); panel.makeKeyAndOrderFront(nil)
-        panel.makeFirstResponder(web); hideToast(); emit("visibility",["open":true]); refresh(); diagnostics()
+        panel.makeFirstResponder(web); hideToast(); updateStrip(); emit("visibility",["open":true]); refresh(); diagnostics()
     }
-    func closePanel() { panelOpen = false; panel.orderOut(nil); emit("visibility",["open":false]); diagnostics() }
+    func closePanel() { panelOpen = false; panel.orderOut(nil); updateStrip(); emit("visibility",["open":false]); diagnostics() }
     func screenForBubble() -> NSScreen { NSScreen.screens.first(where: { $0.frame.contains(NSPoint(x:bubble.frame.midX,y:bubble.frame.midY)) }) ?? NSScreen.screens.first! }
     func screenKey(_ screen: NSScreen) -> String { String((screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0) }
     func restorePosition() {
@@ -225,7 +262,7 @@ final class HUDApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKN
         bubble.setFrameOrigin(NSPoint(x:frame.minX+point.x,y:frame.minY+point.y)); positionPanel(); diagnostics()
     }
     func positionPanel() {
-        defer { positionToast() }
+        defer { positionToast(); positionStrip() }
         guard bubble != nil, panel != nil, !NSScreen.screens.isEmpty else { return }
         let frame = screenForBubble().visibleFrame
         let size = NSSize(width:min(panel.frame.width,frame.width-24),height:min(panel.frame.height,frame.height-24))
@@ -235,7 +272,7 @@ final class HUDApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKN
         panel.setFrame(NSRect(x:min(max(x,frame.minX+12),frame.maxX-size.width-12),y:min(max(y,frame.minY+12),frame.maxY-size.height-12),width:size.width,height:size.height),display:true)
     }
     @objc func screensChanged() { restorePosition(); positionPanel() }
-    @objc func spaceChanged() { if visible { bubble.orderFrontRegardless(); if panelOpen { panel.orderFrontRegardless() }; toast?.orderFrontRegardless() } }
+    @objc func spaceChanged() { if visible { bubble.orderFrontRegardless(); if panelOpen { panel.orderFrontRegardless() } else if strip?.isVisible == true { strip?.orderFrontRegardless() }; toast?.orderFrontRegardless() } }
     // Manual refresh: every machine, ignoring the offline backoff.
     @objc func refresh() { check(nil, force: true) }
     func tick() {
@@ -307,6 +344,7 @@ final class HUDApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKN
             if let width = data["rosterWidth"] as? Double, width >= 56 && width <= 600 { defaults.set(width,forKey:"rosterWidth") }
             if let mode = data["mode"] as? String, ["chat","terminal"].contains(mode) { defaults.set(mode,forKey:"viewMode") }
         case "badge": bubbleView.count = data["count"] as? Int ?? 0; bubbleView.tone = data["tone"] as? String ?? ""; bubbleView.working = (data["working"] as? Int ?? 0) > 0
+        case "strip": stripAgents = Array((data["agents"] as? [Row] ?? []).prefix(8)); stripLabel = String((data["label"] as? String ?? "").prefix(40)); updateStrip()
         case "alertPreview":
             if !panelOpen && visible, let id = data["id"] as? String {
                 reads.async {
@@ -353,14 +391,14 @@ final class HUDApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKN
         if toast == nil && data["update"] as? Bool == true { return }
         let view: ToastView
         if let current = toast?.contentView as? ToastView { view = current } else {
-            let window = NSPanel(contentRect:NSRect(x:0,y:0,width:320,height:92),styleMask:[.borderless,.nonactivatingPanel],backing:.buffered,defer:false)
+            let window = NSPanel(contentRect:NSRect(x:0,y:0,width:380,height:124),styleMask:[.borderless,.nonactivatingPanel],backing:.buffered,defer:false)
             configure(window); window.title = "Herdr HUD Alert"; window.hasShadow = true
             window.level = NSWindow.Level(rawValue:bubble.level.rawValue+1)
-            view = ToastView(frame:NSRect(x:0,y:0,width:320,height:92)); view.app = self; window.contentView = view
+            view = ToastView(frame:NSRect(x:0,y:0,width:380,height:124)); view.app = self; window.contentView = view
             toast = window; positionToast(); window.orderFrontRegardless()
         }
         view.agentID = data["id"] as? String ?? ""; view.sticky = data["tone"] as? String == "blocked"
-        view.title = data["title"] as? String ?? "Agent update"; view.detail = data["preview"] as? String ?? "Click to read the response"
+        view.title = data["title"] as? String ?? "Agent update"; view.detail = data["preview"] as? String ?? "Click to read the response"; view.answers = data["answers"] as? String ?? ""; view.waiting = data["waiting"] as? Int ?? 0; view.danger = data["danger"] as? Bool ?? false
         view.needsDisplay = true; armToastTimer()
     }
     func armToastTimer() {
@@ -387,7 +425,7 @@ final class HUDApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKN
         case "show": if !visible { toggleVisibility() }
         case "preview-alert":
             let foreground = NSWorkspace.shared.frontmostApplication?.processIdentifier
-            showToast(["id":defaults.string(forKey:"selectedAgent") ?? "","title":"Notification preview","preview":"Notifications follow H and stay clear of the button."])
+            showToast(["id":defaults.string(forKey:"selectedAgent") ?? "","title":"Notification preview","preview":"Alerts appear here, clear of H."])
             DispatchQueue.main.asyncAfter(deadline:.now()+0.25) {
                 guard let toast = self.toast else { return }
                 let windows = CGWindowListCopyWindowInfo(.optionOnScreenOnly,kCGNullWindowID) as? [Row] ?? []
@@ -422,22 +460,128 @@ final class HUDApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKN
 }
 final class ToastView: NSView {
     weak var app: HUDApp?
-    var agentID = "", title = "", detail = "", sticky = false
+    var agentID = "", title = "", detail = "", answers = "", sticky = false, danger = false, waiting = 0
     override func acceptsFirstMouse(for event:NSEvent?) -> Bool { true }
     override func updateTrackingAreas() { super.updateTrackingAreas(); for area in trackingAreas { removeTrackingArea(area) }; addTrackingArea(NSTrackingArea(rect:bounds,options:[.mouseEnteredAndExited,.activeAlways],owner:self)) }
     override func mouseEntered(with event:NSEvent) { app?.toastHover = true }
     override func mouseExited(with event:NSEvent) { app?.toastHover = false; app?.armToastTimer() }
     override func mouseUp(with event:NSEvent) { if convert(event.locationInWindow,from:nil).x > bounds.width-35 { app?.hideToast() } else { let id = agentID; app?.openPanel(); app?.emit("select",["id":id]) } }
-    // A WoW-style tooltip: deep navy, thin light border, a stripe and title in
-    // the state color (red needs input, blue finished).
+    // Like a game overlay's message toast: a dark sheet, a state-tinted icon, a
+    // small kicker, the title, one line of preview and the shortcut that opens it.
     override func draw(_ dirtyRect:NSRect) {
-        let shape = NSBezierPath(roundedRect:bounds.insetBy(dx:0.5,dy:0.5),xRadius:10,yRadius:10)
-        NSColor(srgbRed:0.03,green:0.04,blue:0.08,alpha:0.94).setFill(); shape.fill()
-        NSColor(white:1,alpha:0.16).setStroke(); shape.lineWidth = 1; shape.stroke()
-        (sticky ? Tone.red : Tone.blue).setFill(); NSBezierPath(roundedRect:NSRect(x:0,y:10,width:3,height:bounds.height-20),xRadius:1.5,yRadius:1.5).fill()
-        let titleColor = sticky ? NSColor(srgbRed:1,green:0.60,blue:0.60,alpha:1) : NSColor(srgbRed:0.66,green:0.80,blue:1,alpha:1)
-        (title as NSString).draw(in:NSRect(x:16,y:50,width:270,height:26),withAttributes:[.font:NSFont.systemFont(ofSize:13.5,weight:.semibold),.foregroundColor:titleColor])
-        (detail as NSString).draw(in:NSRect(x:16,y:12,width:282,height:36),withAttributes:[.font:NSFont.systemFont(ofSize:12.5),.foregroundColor:NSColor(srgbRed:0.77,green:0.75,blue:0.71,alpha:1)])
-        ("×" as NSString).draw(at:NSPoint(x:296,y:65),withAttributes:[.font:NSFont.systemFont(ofSize:18),.foregroundColor:NSColor.gray])
+        let shape = NSBezierPath(roundedRect:bounds.insetBy(dx:0.5,dy:0.5),xRadius:12,yRadius:12)
+        NSColor(srgbRed:0.067,green:0.075,blue:0.094,alpha:0.97).setFill(); shape.fill()
+        NSColor(white:1,alpha:0.12).setStroke(); shape.lineWidth = 1; shape.stroke()
+        let tone = danger ? Tone.amber : sticky ? Tone.red : Tone.blue, top = bounds.height
+        let icon = NSRect(x:14,y:top-52,width:38,height:38), plate = NSBezierPath(roundedRect:icon,xRadius:10,yRadius:10)
+        tone.withAlphaComponent(0.2).setFill(); plate.fill(); tone.withAlphaComponent(0.5).setStroke(); plate.lineWidth = 1; plate.stroke()
+        let mark = (danger ? "⚠" : sticky ? "!" : "✓") as NSString, markAttrs: [NSAttributedString.Key:Any] = [.font:NSFont.monospacedSystemFont(ofSize:14,weight:.bold),.foregroundColor:danger ? NSColor(srgbRed:1,green:0.80,blue:0.55,alpha:1) : sticky ? Tone.redInk : Tone.blueInk]
+        let markSize = mark.size(withAttributes:markAttrs); mark.draw(at:NSPoint(x:icon.midX-markSize.width/2,y:icon.midY-markSize.height/2),withAttributes:markAttrs)
+        let line = NSMutableParagraphStyle(); line.lineBreakMode = .byTruncatingTail
+        let kicker = (sticky ? (danger ? "DESTRUCTIVE" : "NEEDS YOU") + (waiting > 1 ? " · \(waiting) WAITING" : "") : "FINISHED") as NSString
+        kicker.draw(in:NSRect(x:64,y:top-27,width:220,height:14),withAttributes:[.font:NSFont.systemFont(ofSize:10.5,weight:.bold),.kern:0.8,.foregroundColor:danger ? NSColor(srgbRed:1,green:0.80,blue:0.55,alpha:1) : sticky ? NSColor(srgbRed:1,green:0.61,blue:0.63,alpha:1) : NSColor(srgbRed:0.61,green:0.78,blue:1,alpha:1),.paragraphStyle:line])
+        (title as NSString).draw(in:NSRect(x:64,y:top-49,width:280,height:20),withAttributes:[.font:NSFont.systemFont(ofSize:15,weight:.semibold),.foregroundColor:NSColor(white:0.95,alpha:1),.paragraphStyle:line])
+        // A destructive command reads in amber, and Yes is no longer the highlighted key.
+        (detail as NSString).draw(in:NSRect(x:64,y:top-71,width:300,height:19),withAttributes:[.font:NSFont.systemFont(ofSize:13.5,weight:danger ? .medium : .regular),.foregroundColor:danger ? NSColor(srgbRed:1,green:0.80,blue:0.55,alpha:1) : NSColor(srgbRed:0.86,green:0.87,blue:0.89,alpha:1),.paragraphStyle:line])
+        let mode = UserDefaults.standard.integer(forKey:"shortcutMode"), keys = mode == 0 ? "⌘⌥H" : mode == 1 ? "⌃⌥H" : ""
+        let hintFont = NSFont.systemFont(ofSize:13,weight:.medium), hintColor = NSColor(srgbRed:0.76,green:0.79,blue:0.83,alpha:1)
+        // A hairline splits the message from the keys that act on it.
+        NSColor(white:1,alpha:0.08).setFill(); NSRect(x:14,y:42,width:bounds.width-28,height:1).fill()
+        // Keycaps for the shortcut and each answer number: "⌘⌥H then 1 Yes 2 Always 3 No".
+        var x: CGFloat = 14
+        func cap(_ text: String, primary: Bool = false) {
+            let keyAttrs: [NSAttributedString.Key:Any] = [.font:NSFont.systemFont(ofSize:12,weight:.bold),.foregroundColor:primary ? NSColor(srgbRed:0.02,green:0.08,blue:0.05,alpha:1) : NSColor(white:0.95,alpha:1)]
+            let size = (text as NSString).size(withAttributes:keyAttrs), rect = NSRect(x:x,y:11,width:max(22,size.width+12),height:22)
+            (primary ? Tone.green : NSColor(white:1,alpha:0.1)).setFill(); let path = NSBezierPath(roundedRect:rect,xRadius:6,yRadius:6); path.fill()
+            NSColor(white:1,alpha:primary ? 0 : 0.24).setStroke(); path.lineWidth = 1; path.stroke()
+            (text as NSString).draw(at:NSPoint(x:rect.midX-size.width/2,y:rect.midY-size.height/2),withAttributes:keyAttrs); x = rect.maxX+6
+        }
+        func word(_ text: String, _ color: NSColor) {
+            let attrs: [NSAttributedString.Key:Any] = [.font:hintFont,.foregroundColor:color]
+            guard x < bounds.width-20 else { return }
+            (text as NSString).draw(at:NSPoint(x:x,y:13),withAttributes:attrs); x += (text as NSString).size(withAttributes:attrs).width+12
+        }
+        if keys.isEmpty { word("Click to open",hintColor) }
+        else {
+            cap(keys)
+            if answers.isEmpty { word("open",hintColor) }
+            else {
+                word("then",hintColor)
+                for (i, answer) in answers.components(separatedBy:" · ").enumerated() {
+                    let parts = answer.split(separator:" ",maxSplits:1).map(String.init)
+                    guard let number = parts.first else { continue }
+                    cap(number, primary: i == 0 && !danger); word(parts.count > 1 ? parts[1] : "",NSColor(white:0.95,alpha:1))
+                }
+            }
+        }
+        ("×" as NSString).draw(at:NSPoint(x:bounds.width-24,y:top-28),withAttributes:[.font:NSFont.systemFont(ofSize:17),.foregroundColor:hintColor])
+    }
+}
+final class StripView: NSView {
+    weak var app: HUDApp?
+    var agents: [Row] = [], label = ""
+    var tiles: [(id: String, rect: NSRect)] = []
+    static let labelAttrs: [NSAttributedString.Key:Any] = [.font:NSFont.systemFont(ofSize:12.5,weight:.semibold),.foregroundColor:NSColor(srgbRed:1,green:0.70,blue:0.72,alpha:1)]
+    static let nameAttrs: [NSAttributedString.Key:Any] = [.font:NSFont.systemFont(ofSize:13,weight:.semibold),.foregroundColor:NSColor(srgbRed:0.93,green:0.94,blue:0.95,alpha:1)]
+    // Agents that need you or are working carry their name; ready ones stay a tile.
+    static func name(_ agent: Row) -> String? {
+        guard ["blocked","working","unread"].contains(agent["state"] as? String ?? "") else { return nil }
+        let text = agent["name"] as? String ?? ""; return text.count > 18 ? String(text.prefix(17)) + "…" : text
+    }
+    override func acceptsFirstMouse(for event:NSEvent?) -> Bool { true }
+    static func rank(_ state: String) -> Int { ["blocked":0,"unread":1,"working":2][state] ?? 3 }
+    // Left to right: the "needs you" label, then tiles with a hairline between state groups.
+    func plan() -> (width: CGFloat, label: CGFloat, tiles: [CGFloat], separators: [CGFloat]) {
+        var x: CGFloat = 10, labelX: CGFloat = -1, xs: [CGFloat] = [], seps: [CGFloat] = [], last = -1
+        if !label.isEmpty { labelX = x; x += ceil((label as NSString).size(withAttributes:Self.labelAttrs).width)+10 }
+        for agent in agents {
+            let rank = Self.rank(agent["state"] as? String ?? "")
+            if last >= 0 && rank != last { seps.append(x); x += 9 }
+            xs.append(x); x += 36; last = rank
+            if let name = Self.name(agent) { x += ceil((name as NSString).size(withAttributes:Self.nameAttrs).width)+11 }
+        }
+        return (x-8+10, labelX, xs, seps)
+    }
+    static func hsl(_ h: Double, _ s: Double, _ l: Double) -> NSColor {
+        let v = l+s*min(l,1-l), sv = v == 0 ? 0 : 2*(1-l/v)
+        return NSColor(hue:CGFloat(h.truncatingRemainder(dividingBy:360)/360),saturation:CGFloat(sv),brightness:CGFloat(v),alpha:1)
+    }
+    override func draw(_ dirtyRect: NSRect) {
+        let shape = NSBezierPath(roundedRect:bounds.insetBy(dx:0.5,dy:0.5),xRadius:14,yRadius:14)
+        NSColor(srgbRed:0.067,green:0.075,blue:0.094,alpha:0.9).setFill(); shape.fill()
+        NSColor(white:1,alpha:0.1).setStroke(); shape.lineWidth = 1; shape.stroke()
+        let spots = plan(), mid = bounds.midY
+        if spots.label >= 0 {
+            let size = (label as NSString).size(withAttributes:Self.labelAttrs)
+            (label as NSString).draw(at:NSPoint(x:spots.label,y:mid-size.height/2),withAttributes:Self.labelAttrs)
+        }
+        for x in spots.separators { NSColor(white:1,alpha:0.12).setFill(); NSRect(x:x,y:mid-11,width:1,height:22).fill() }
+        tiles = []
+        for (agent, x) in zip(agents, spots.tiles) {
+            let state = agent["state"] as? String ?? "", rect = NSRect(x:x,y:mid-14,width:28,height:28), hue = agent["hue"] as? Double ?? 0
+            var hit = rect
+            if let name = Self.name(agent) {
+                let size = (name as NSString).size(withAttributes:Self.nameAttrs)
+                (name as NSString).draw(at:NSPoint(x:rect.maxX+7,y:mid-size.height/2),withAttributes:Self.nameAttrs); hit.size.width += ceil(size.width)+7
+            }
+            tiles.append((agent["id"] as? String ?? "", hit))
+            let ring: NSColor? = state == "blocked" ? Tone.red : state == "working" ? Tone.amber.withAlphaComponent(0.85) : state == "unread" ? Tone.blue : nil
+            if let ring = ring { ring.setStroke(); let outer = NSBezierPath(roundedRect:rect.insetBy(dx:-2.75,dy:-2.75),xRadius:10,yRadius:10); outer.lineWidth = 1.5; outer.stroke() }
+            let quiet = ["idle","done","offline"].contains(state), path = NSBezierPath(roundedRect:rect,xRadius:8,yRadius:8)
+            let top = state == "offline" ? NSColor(white:0.45,alpha:1) : Self.hsl(hue,0.60,0.56), bottom = state == "offline" ? NSColor(white:0.25,alpha:1) : Self.hsl(hue+24,0.54,0.36)
+            NSGraphicsContext.saveGraphicsState(); if quiet { NSGraphicsContext.current?.cgContext.setAlpha(0.82) }
+            NSGradient(starting:top,ending:bottom)?.draw(in:path,angle:-70)
+            NSColor(white:1,alpha:0.16).setStroke(); path.lineWidth = 1; path.stroke()
+            let text = (agent["initials"] as? String ?? "?") as NSString, attrs: [NSAttributedString.Key:Any] = [.font:NSFont.systemFont(ofSize:10.5,weight:.heavy),.foregroundColor:NSColor.white]
+            let size = text.size(withAttributes:attrs); text.draw(at:NSPoint(x:rect.midX-size.width/2,y:rect.midY-size.height/2),withAttributes:attrs)
+            NSGraphicsContext.restoreGraphicsState()
+        }
+        let names = agents.map { "\($0["name"] as? String ?? "agent") \($0["state"] as? String ?? "")" }.joined(separator:", ")
+        setAccessibilityRole(.group); setAccessibilityLabel((label.isEmpty ? "" : label + ". ") + "Agents: " + names + ". Click one to open it.")
+    }
+    override func mouseUp(with event: NSEvent) {
+        let point = convert(event.locationInWindow,from:nil)
+        let id = tiles.first(where:{ $0.rect.insetBy(dx:-4,dy:-8).contains(point) })?.id ?? tiles.first?.id ?? ""
+        app?.openPanel(); if !id.isEmpty { app?.emit("select",["id":id]) }
     }
 }

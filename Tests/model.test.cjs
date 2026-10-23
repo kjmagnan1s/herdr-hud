@@ -101,3 +101,10 @@ test('box tables with only a header rule keep one row per line; box art stays ar
   assert.equal(boxTable(['╭──────╮','│ hi   │','╰──────╯']),null);
   assert.equal(boxTable(['│ a │ b │','│ c │']),null);
 });
+test('destructive permission prompts are flagged, ordinary ones are not',()=>{
+  const {risky}=require('../Sources/HerdrHUD/Resources/model.js');
+  assert.equal(risky(parse(read('permission'),'claude').dialog),true);
+  assert.equal(risky({type:'permission',title:'Bash command',detail:'npm test'}),false);
+  assert.equal(risky({type:'permission',title:'Bash command',detail:'git push --force origin main'}),true);
+  assert.equal(risky({type:'question',title:'Quarter',detail:'rm -rf /'}),false);
+});
