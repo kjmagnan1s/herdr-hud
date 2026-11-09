@@ -478,6 +478,7 @@ sealed class HUDContext : ApplicationContext
                 output["title"] = data.Text("title"); output["tone"] = data.Text("tone"); Emit("alertPreview", output); break;
             case "alert": if (!panel.Visible && prefs.Visible) ShowToast(data); break;
             case "alertClear": HideToast(); break;
+            case "copy": { var text = data.Text("text"); if (text.Length > 0) { try { Clipboard.SetText(text.Length > 200000 ? text[..200000] : text); } catch (System.Runtime.InteropServices.ExternalException) { } } break; }
             case "output": case "prompt":
                 if (id.Length == 0 || requestID.Length == 0 || requestID.Length > 100 || !panel.Visible) break;
                 if (op == "prompt" && !promptIDs.Add(requestID)) break;

@@ -118,7 +118,7 @@ static class LocalPrompt {
         }
         var current=(await Rpc("agent.get",new(){["target"]=pane}))["agent"]!.AsObject();
         foreach(var key in new[]{"pane_id","terminal_id","workspace_id","agent","agent_session"})if(!JsonNode.DeepEquals(current[key],expected[key]))throw new InvalidOperationException("Agent changed; no prompt sent.");
-        if(current.Text("agent_status") is not("idle" or "done"))throw new InvalidOperationException("Agent is not ready.");
+        if(current.Text("agent_status") is not("idle" or "done" or "working"))throw new InvalidOperationException("Agent is not ready.");
         var result=await Rpc("agent.prompt",new(){["target"]=pane,["text"]=request["text"]!.DeepClone()});
         if(result.Text("type")!="agent_prompted" || result["agent"]?["terminal_id"]?.GetValue<string>()!=expected.Text("terminal_id"))throw new InvalidOperationException("Invalid acknowledgement.");
         return new JsonObject{["result"]=result.DeepClone()}.ToJsonString();

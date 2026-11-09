@@ -216,7 +216,8 @@ public sealed class HerdrClient
     {
         if (string.IsNullOrWhiteSpace(message) || Encoding.UTF8.GetByteCount(message) > 60000 || message.Contains('\0') || message.StartsWith('-')) throw new InvalidOperationException("Enter a prompt under 60 KB that does not start with a dash.");
         var (machine, agent) = await Resolve(id);
-        if (agent.Text("agent_status") is not ("idle" or "done")) throw new InvalidOperationException("This agent is busy or needs input. Answer native questions in Herdr.");
+        // Working agents take the prompt too (the agent queues it); Herdr refuses blocked ones.
+        if (agent.Text("agent_status") is not ("idle" or "done" or "working")) throw new InvalidOperationException("This agent needs input. Answer its question first, here or in Herdr.");
         var input=Encoding.UTF8.GetBytes(new JsonObject{["session"]=machine.Session,["agent"]=agent.DeepClone(),["text"]=message}.ToJsonString()+"\n");
         string raw;
         try { raw = await execute(Invoke(machine, ["status","server"],true,input)); }

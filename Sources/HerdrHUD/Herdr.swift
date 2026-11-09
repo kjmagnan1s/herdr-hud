@@ -212,7 +212,9 @@ final class HerdrClient {
     func prompt(_ id: String, _ message: String) throws -> Row {
         guard !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, message.utf8.count <= 60000, !message.contains("\0"), !message.hasPrefix("-") else { throw HUDError("Enter a prompt under 60 KB that does not start with a dash.") }
         let (machine, row) = try resolve(id)
-        guard ["idle", "done"].contains(row["agent_status"] as? String ?? "") else { throw HUDError("This agent is busy or needs input. Answer native questions in Herdr.") }
+        // Working agents take the prompt too: Claude Code and Codex queue a message
+        // that arrives mid-turn. Herdr itself refuses a blocked agent before typing.
+        guard ["idle", "done", "working"].contains(row["agent_status"] as? String ?? "") else { throw HUDError("This agent needs input. Answer its question first, here or in Herdr.") }
         let input=Data((encode(["session":machine.session,"agent":row,"text":message])+"\n").utf8)
         let raw: String
         do { raw = try execute(invocation(machine, ["status","server"], mutation:true, input:input)) }

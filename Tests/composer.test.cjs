@@ -28,3 +28,19 @@ for(const platform of ['mac','windows']){
   });
 }
 test('Windows native events reach the shared receiver',()=>{const h=harness('windows');let got;h.window.receive=value=>got=value;h.listeners.native({data:{type:'notice',data:{message:'fixture'}}});assert.equal(got.data.message,'fixture');});
+for(const platform of ['mac','windows']){
+  test(`${platform}: selecting output text copies it once through the host`,()=>{
+    const h=harness(platform);h.messages.length=0;h.window.getSelection=()=>'git status --short\n';
+    h.listeners.mouseup({button:0,target:{closest:()=>null},clientX:5,clientY:5});
+    assert.deepEqual(h.messages.filter(m=>m.op==='copy').map(m=>m.text),['git status --short']);
+    h.listeners.mouseup({button:0,target:{closest:sel=>sel==='textarea,input'?{}:null}});
+    h.listeners.mouseup({button:2,target:{closest:()=>null}});
+    h.window.getSelection=()=>'   ';h.listeners.mouseup({button:0,target:{closest:()=>null}});
+    assert.equal(h.messages.filter(m=>m.op==='copy').length,1,'prompt box, right click, and empty selections never copy');
+  });
+}
+test('a working agent accepts one prompt from the composer',()=>{
+  const h=harness('mac');vm.runInContext("agents=[{id:'fixture',online:true,agent_status:'working',agent:'claude'}];",h.context);h.reset('queue this');
+  assert.equal(h.key(),true);assert.equal(h.messages.filter(m=>m.op==='prompt').length,1);h.key();assert.equal(h.messages.filter(m=>m.op==='prompt').length,1);
+  vm.runInContext("agents=[{id:'fixture',online:true,agent_status:'blocked',agent:'claude'}];sending=false;",h.context);h.reset('not now');h.key();assert.equal(h.messages.filter(m=>m.op==='prompt').length,0,'blocked agents still refuse');
+});

@@ -43,8 +43,13 @@ final class TransportTests: XCTestCase {
         _ = try client.prompt(id,"literal $(printf secret)\nsecond line")
         XCTAssertEqual(sent.count,1);XCTAssertFalse(sent[0].arguments.joined().contains("printf secret"));XCTAssertTrue(String(decoding:sent[0].input!,as:UTF8.self).contains("printf secret"));XCTAssertTrue(sent[0].localPrompt)
     }
-    func testBusyBlockedUnknownNeverSend() throws {
-        for status in ["working","blocked","unknown"] {var sent=false;let client=clientWith({self.row(status)},sends:{_ in sent=true;return "{}"});let id=(client.snapshot()["agents"] as! [Row])[0]["id"] as! String;XCTAssertThrowsError(try client.prompt(id,"hello"));XCTAssertFalse(sent)}
+    func testWorkingAgentTakesOnePrompt() throws {
+        var sends=0;let client=clientWith({self.row("working")},sends:{ _ in sends+=1; return "{\"result\":{\"type\":\"agent_prompted\",\"agent\":{\"terminal_id\":\"term1\"}}}" })
+        let id=(client.snapshot()["agents"] as! [Row])[0]["id"] as! String
+        _ = try client.prompt(id,"queue this");XCTAssertEqual(sends,1)
+    }
+    func testBlockedUnknownNeverSend() throws {
+        for status in ["blocked","unknown"] {var sent=false;let client=clientWith({self.row(status)},sends:{_ in sent=true;return "{}"});let id=(client.snapshot()["agents"] as! [Row])[0]["id"] as! String;XCTAssertThrowsError(try client.prompt(id,"hello"));XCTAssertFalse(sent)}
     }
     func testReplacementRefusedForReadAndPrompt() throws {
         var current=row();var sent=false;let client=clientWith({current},sends:{_ in sent=true;return "{}"});let id=(client.snapshot()["agents"] as! [Row])[0]["id"] as! String

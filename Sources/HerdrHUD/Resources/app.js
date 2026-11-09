@@ -18,6 +18,22 @@ function status(a){if(!a)return '';if(a.agent_status!=='blocked'&&typeof HUDMode
 function stateLabel(a){return !a.online?'Offline':status(a)==='blocked'?'Needs input':a.agent_status==='working'?'Working':unread.has(a.id)?'New':a.agent_status==='done'?'Done':a.agent_status==='idle'?'Idle':'Unknown';}
 function stateClass(a){return !a.online?'offline':status(a)==='blocked'?'blocked':a.agent_status==='working'?'working':unread.has(a.id)?'unread':a.agent_status==='done'?'done':'idle';}
 function el(tag,text,cls){const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(cls)node.className=cls;return node;}
+// Copy on select, like a terminal: letting go of the mouse over selected text
+// puts it on the clipboard through the native host. The prompt box and search
+// field keep normal editing. A small "Copied" tag confirms it at the pointer.
+let copiedTimer=0;
+function copySelection(event){
+  if(event.button>0||event.target?.closest?.('textarea,input'))return;
+  const text=String(window.getSelection?.()||'').replace(/\s+$/,'');if(!text.trim())return;
+  request('copy',{text:text.slice(0,200000)});copiedTag(event.clientX,event.clientY);
+}
+function copiedTag(x,y){
+  if(!document.body?.append)return;
+  let tag=document.querySelector('.copied');if(!tag){tag=document.createElement('div');tag.className='copied';tag.setAttribute('role','status');tag.textContent='Copied';document.body.append(tag);}
+  tag.style.left=`${x}px`;tag.style.top=`${y}px`;tag.classList.remove('show');void tag.offsetWidth;tag.classList.add('show');
+  clearTimeout(copiedTimer);copiedTimer=setTimeout(()=>tag.classList.remove('show'),1100);
+}
+document.addEventListener('mouseup',copySelection);
 function notice(text){$('notice').hidden=!text;$('notice').textContent=text;}
 // The H shows the most urgent state only: red counts agents that need input,
 // otherwise blue counts unread results. An amber arc turns while any agent works.
@@ -122,9 +138,9 @@ function renderHeader(){
   const state=status(a);const busy=state==='working';$('working').hidden=!busy;
   if(busy)$('work-text').textContent=data?.activity?.label||'Working…';
   if(busy&&!since.has(a.id))since.set(a.id,Date.now());
-  $('send').disabled=!a?.online||!['idle','done'].includes(state)||sending||uncertain.has(selected)||!$('prompt').value.trim();
+  $('send').disabled=!a?.online||!['idle','done','working'].includes(state)||sending||uncertain.has(selected)||!$('prompt').value.trim();
   $('prompt').disabled=!a;$('chat').disabled=!chatProviders.has(a?.agent);
-  $('send-status').textContent=sending?'Sending once…':uncertain.has(selected)?'Delivery uncertain. Inspect this agent in Herdr before sending again.':!a?'Choose an agent to get started.':!a.online?'Machine offline. Your draft is retained.':state==='blocked'?'Needs your input. Pick an option above, or answer in Herdr.':busy?'Agent is working. You can draft the next prompt here.':['idle','done'].includes(state)?'Ready for your next prompt.':'Agent state is unknown. Sending is disabled.';
+  $('send-status').textContent=sending?'Sending once…':uncertain.has(selected)?'Delivery uncertain. Inspect this agent in Herdr before sending again.':!a?'Choose an agent to get started.':!a.online?'Machine offline. Your draft is retained.':state==='blocked'?'Needs your input. Pick an option above, or answer in Herdr.':busy?'Agent is working. Send now and it picks this up next.':['idle','done'].includes(state)?'Ready for your next prompt.':'Agent state is unknown. Sending is disabled.';
   $('reconcile').hidden=!uncertain.has(selected);
 }
 // Model, permission mode and context use, read from the agent's own status line.
@@ -216,7 +232,7 @@ post({op:'alert',id:data.id,title:data.title,tone:data.tone,preview:(parsed.dial
   }else if(type==='prompt'){
     const pending=promptByRequest.get(data.requestID);if(!pending)return;promptByRequest.delete(data.requestID);sending=false;
     if(data.error){notice(data.error);if(/uncertain/i.test(data.error))uncertain.add(pending.id);}
-    else{if(selected===pending.id&&$('prompt').value===pending.message)$('prompt').value='';if(drafts.get(pending.id)===pending.message)drafts.delete(pending.id);notice('Prompt sent.');request('refresh');}renderHeader();
+    else{if(selected===pending.id&&$('prompt').value===pending.message)$('prompt').value='';if(drafts.get(pending.id)===pending.message)drafts.delete(pending.id);notice(agents.find(x=>x.id===pending.id)?.agent_status==='working'?'Sent. The agent picks it up when it can.':'Prompt sent.');request('refresh');}renderHeader();
   }else if(type==='answer'){
     answering=false;const id=data.id||answeringID;if(data.error)notice(data.error);else{notice('Answer sent.');const q=outputs.has(id)&&parsedOutput(id,agents.find(a=>a.id===id)?.agent).dialog?.question;if(q)answered.set(id,q);}
     if(id===selected){lastRendered='';renderOutput();wantSelected=true;read();}else{outputs.delete(id);renderRoster();prefetch();}
