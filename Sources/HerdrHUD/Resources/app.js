@@ -18,6 +18,22 @@ function status(a){if(!a)return '';if(a.agent_status!=='blocked'&&typeof HUDMode
 function stateLabel(a){return !a.online?'Offline':status(a)==='blocked'?'Needs input':a.agent_status==='working'?'Working':unread.has(a.id)?'New':a.agent_status==='done'?'Done':a.agent_status==='idle'?'Idle':'Unknown';}
 function stateClass(a){return !a.online?'offline':status(a)==='blocked'?'blocked':a.agent_status==='working'?'working':unread.has(a.id)?'unread':a.agent_status==='done'?'done':'idle';}
 function el(tag,text,cls){const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(cls)node.className=cls;return node;}
+// Copy on select, like a terminal: letting go of the mouse over selected text
+// puts it on the clipboard through the native host. The prompt box and search
+// field keep normal editing. A small "Copied" tag confirms it at the pointer.
+let copiedTimer=0;
+function copySelection(event){
+  if(event.button>0||event.target?.closest?.('textarea,input'))return;
+  const text=String(window.getSelection?.()||'').replace(/\s+$/,'');if(!text.trim())return;
+  request('copy',{text:text.slice(0,200000)});copiedTag(event.clientX,event.clientY);
+}
+function copiedTag(x,y){
+  if(!document.body?.append)return;
+  let tag=document.querySelector('.copied');if(!tag){tag=document.createElement('div');tag.className='copied';tag.setAttribute('role','status');tag.textContent='Copied';document.body.append(tag);}
+  tag.style.left=`${x}px`;tag.style.top=`${y}px`;tag.classList.remove('show');void tag.offsetWidth;tag.classList.add('show');
+  clearTimeout(copiedTimer);copiedTimer=setTimeout(()=>tag.classList.remove('show'),1100);
+}
+document.addEventListener('mouseup',copySelection);
 function notice(text){$('notice').hidden=!text;$('notice').textContent=text;}
 // The H shows the most urgent state only: red counts agents that need input,
 // otherwise blue counts unread results. An amber arc turns while any agent works.
@@ -112,6 +128,7 @@ function select(id){
 function rebind(oldID,newID){
   if(drafts.has(oldID)){drafts.set(newID,drafts.get(oldID));drafts.delete(oldID);}
   if(uncertain.has(oldID)){uncertain.add(newID);uncertain.delete(oldID);}
+  if(queued.has(oldID)){queued.set(newID,queued.get(oldID));queued.delete(oldID);}
   if(outputs.has(oldID)&&!outputs.has(newID))outputs.set(newID,{...outputs.get(oldID),id:newID});
   if(selected===oldID){selected=newID;request('preferences',{selectedAgent:newID});lastRendered='';}
 }
@@ -122,9 +139,9 @@ function renderHeader(){
   const state=status(a);const busy=state==='working';$('working').hidden=!busy;
   if(busy)$('work-text').textContent=data?.activity?.label||'Working…';
   if(busy&&!since.has(a.id))since.set(a.id,Date.now());
-  $('send').disabled=!a?.online||!['idle','done'].includes(state)||sending||uncertain.has(selected)||!$('prompt').value.trim();
+  $('send').disabled=!a?.online||!['idle','done','working'].includes(state)||sending||uncertain.has(selected)||!$('prompt').value.trim();
   $('prompt').disabled=!a;$('chat').disabled=!chatProviders.has(a?.agent);
-  $('send-status').textContent=sending?'Sending once…':uncertain.has(selected)?'Delivery uncertain. Inspect this agent in Herdr before sending again.':!a?'Choose an agent to get started.':!a.online?'Machine offline. Your draft is retained.':state==='blocked'?'Needs your input. Pick an option above, or answer in Herdr.':busy?'Agent is working. You can draft the next prompt here.':['idle','done'].includes(state)?'Ready for your next prompt.':'Agent state is unknown. Sending is disabled.';
+  $('send-status').textContent=sending?'Sending once…':uncertain.has(selected)?'Delivery uncertain. Inspect this agent in Herdr before sending again.':!a?'Choose an agent to get started.':!a.online?'Machine offline. Your draft is retained.':state==='blocked'?'Needs your input. Pick an option above, or answer in Herdr.':queued.has(selected)?(busy||state==='blocked'?'Queued. It sends when the agent finishes. Press ↑ in an empty box to edit it.':'Sending your queued prompt…'):busy?'Agent is working. Send now and it goes out when the agent finishes.':['idle','done'].includes(state)?'Ready for your next prompt.':'Agent state is unknown. Sending is disabled.';
   $('reconcile').hidden=!uncertain.has(selected);
 }
 // Model, permission mode and context use, read from the agent's own status line.
@@ -186,7 +203,23 @@ $('output').onclick=event=>{
   const pick=event.target.closest?.('.dialog-answer');if(!pick||answering||!active()?.online)return;
   answer(selected,{n:Number(pick.dataset.n),label:pick.dataset.label},pick.dataset.question);pick.classList.add('picked');
 };
-function send(){if($('send').disabled)return;const id=selected,message=$('prompt').value;sending=true;notice('');const requestID=request('prompt',{id,message});promptByRequest.set(requestID,{id,message});renderHeader();}
+// A prompt for a working agent waits here and goes out once, through the
+// host's normal ready check, when the agent finishes. Sending it mid-turn could
+// let its Enter answer a permission question that just appeared. Queued
+// prompts for one agent combine; Up in an empty box takes them back to edit.
+let queued=new Map();
+function flushQueued(){
+  if(sending)return;
+  for(const [id,message] of queued){
+    const a=agents.find(x=>x.id===id);
+    if(!a){queued.delete(id);notice('A queued prompt was not sent: its agent closed.');continue;}
+    if(!a.online||uncertain.has(id)||!['idle','done'].includes(a.agent_status))continue;
+    queued.delete(id);sending=true;const requestID=request('prompt',{id,message});promptByRequest.set(requestID,{id,message,queued:true});renderHeader();return;
+  }
+}
+function send(){if($('send').disabled)return;const id=selected,message=$('prompt').value;
+  if(active()?.agent_status==='working'){queued.set(id,queued.has(id)?`${queued.get(id)}\n\n${message}`:message);$('prompt').value='';drafts.delete(id);notice('');renderHeader();return;}
+sending=true;notice('');const requestID=request('prompt',{id,message});promptByRequest.set(requestID,{id,message});renderHeader();}
 window.receive=({type,data})=>{
   if(type==='roster'){
     const before=agents;agents=data.agents||[];
@@ -196,6 +229,7 @@ window.receive=({type,data})=>{
     const valid=new Set(agents.map(a=>a.id));names=HUDModel.labels(agents);
     for(const old of before)if(!valid.has(old.id)){const next=agents.find(a=>!before.some(b=>b.id===a.id)&&HUDModel.pane(a)&&HUDModel.pane(a)===HUDModel.pane(old));if(next){rebind(old.id,next.id);if(unread.has(old.id))unread.add(next.id);}}
     unread=new Set([...unread].filter(id=>valid.has(id)));for(const id of [...outputs.keys(),...parsed.keys()])if(!valid.has(id)){outputs.delete(id);parsed.delete(id);}failed=new Set([...failed].filter(id=>valid.has(id)));
+    flushQueued();
     // The HUD runs beside Herdr, so a healthy connection needs no status line.
     // Only machines that are offline are named.
     $('machines').replaceChildren(...(data.machines||[]).filter(m=>!m.online).map(m=>{const node=el('span',undefined,'machine');node.append(el('span',undefined,'dot offline'),document.createTextNode(`${m.label} · ${m.retryIn?'offline, retrying':'offline'}`));node.title=m.error||'';return node;}));
@@ -215,8 +249,8 @@ post({op:'alert',id:data.id,title:data.title,tone:data.tone,preview:(parsed.dial
     lastOutput=data.text;notice('');if(opened){unread.delete(selected);badge();}renderOutput();renderRoster();renderHeader();prefetch();
   }else if(type==='prompt'){
     const pending=promptByRequest.get(data.requestID);if(!pending)return;promptByRequest.delete(data.requestID);sending=false;
-    if(data.error){notice(data.error);if(/uncertain/i.test(data.error))uncertain.add(pending.id);}
-    else{if(selected===pending.id&&$('prompt').value===pending.message)$('prompt').value='';if(drafts.get(pending.id)===pending.message)drafts.delete(pending.id);notice('Prompt sent.');request('refresh');}renderHeader();
+    if(data.error){notice(data.error);if(/uncertain/i.test(data.error))uncertain.add(pending.id);else if(pending.queued){const draft=drafts.get(pending.id)||'';drafts.set(pending.id,draft?`${pending.message}\n\n${draft}`:pending.message);if(selected===pending.id&&!$('prompt').value.trim())$('prompt').value=drafts.get(pending.id);}}
+    else{if(selected===pending.id&&$('prompt').value===pending.message)$('prompt').value='';if(drafts.get(pending.id)===pending.message)drafts.delete(pending.id);notice(pending.queued?'Queued prompt sent.':'Prompt sent.');request('refresh');}renderHeader();flushQueued();
   }else if(type==='answer'){
     answering=false;const id=data.id||answeringID;if(data.error)notice(data.error);else{notice('Answer sent.');const q=outputs.has(id)&&parsedOutput(id,agents.find(a=>a.id===id)?.agent).dialog?.question;if(q)answered.set(id,q);}
     if(id===selected){lastRendered='';renderOutput();wantSelected=true;read();}else{outputs.delete(id);renderRoster();prefetch();}
@@ -246,6 +280,7 @@ $('reconcile').onclick=()=>{uncertain.delete(selected);notice('');renderHeader()
 $('search').oninput=()=>{filter=$('search').value.toLowerCase();renderRoster();};
 $('prompt').oninput=()=>{drafts.set(selected,$('prompt').value);renderHeader();};
 $('prompt').onkeydown=e=>{
+  if(e.key==='ArrowUp'&&!e.altKey&&!e.metaKey&&!e.ctrlKey&&!$('prompt').value&&queued.has(selected)){e.preventDefault();$('prompt').value=queued.get(selected);queued.delete(selected);renderHeader();return;}
   if(e.key!=='Enter'||e.isComposing||e.keyCode===229)return;
   // Modifier-Enter always inserts a newline, including Control on macOS,
   // whose native textarea behavior is not consistently a line break.

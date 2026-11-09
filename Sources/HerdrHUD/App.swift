@@ -6,6 +6,16 @@ import ServiceManagement
 final class OverlayPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+    // The app has no Edit menu (it lives in the menu bar), and macOS delivers
+    // Command-C, V, X, A, Z and Shift-Command-Z through that menu. Send them to
+    // the focused web view directly so copy and paste work in the panel.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        guard flags == .command || flags == [.command, .shift], let key = event.charactersIgnoringModifiers?.lowercased() else { return super.performKeyEquivalent(with: event) }
+        let actions: [String: String] = flags == .command ? ["c": "copy:", "v": "paste:", "x": "cut:", "a": "selectAll:", "z": "undo:"] : ["z": "redo:"]
+        if let action = actions[key], NSApp.sendAction(Selector(action), to: nil, from: self) { return true }
+        return super.performKeyEquivalent(with: event)
+    }
 }
 // State colors shared by the H and its alerts: red needs input, amber working,
 // blue new to read. They match the panel's palette; the accent is Claude's terracotta.
@@ -354,6 +364,7 @@ final class HUDApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKN
             }
         case "alert": if !panelOpen && visible { showToast(data) }
         case "alertClear": hideToast()
+        case "copy": if let text = data["text"] as? String, !text.isEmpty { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(String(text.prefix(200_000)), forType:.string) }
         case "output", "prompt":
             guard let id = data["id"] as? String, !requestID.isEmpty, panelOpen else { return }
             if operation == "output" { if readBusy { return }; readBusy = true; selected = id }

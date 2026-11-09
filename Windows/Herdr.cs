@@ -216,6 +216,7 @@ public sealed class HerdrClient
     {
         if (string.IsNullOrWhiteSpace(message) || Encoding.UTF8.GetByteCount(message) > 60000 || message.Contains('\0') || message.StartsWith('-')) throw new InvalidOperationException("Enter a prompt under 60 KB that does not start with a dash.");
         var (machine, agent) = await Resolve(id);
+        // Only ready agents take prompts; the panel queues prompts for working agents.
         if (agent.Text("agent_status") is not ("idle" or "done")) throw new InvalidOperationException("This agent is busy or needs input. Answer native questions in Herdr.");
         var input=Encoding.UTF8.GetBytes(new JsonObject{["session"]=machine.Session,["agent"]=agent.DeepClone(),["text"]=message}.ToJsonString()+"\n");
         string raw;
