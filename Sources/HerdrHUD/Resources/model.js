@@ -1,7 +1,15 @@
 /* MIT — transcript parser and roster semantics shared by desktop shells. */
 (function(root){
   function priority(a,unread){return a.agent_status==='blocked'||unread.has(a.id)?0:a.agent_status==='working'?1:2;}
-  function sorted(agents,unread){return agents.map((agent,index)=>({agent,index})).sort((a,b)=>priority(a.agent,unread)-priority(b.agent,unread)||a.index-b.index).map(x=>x.agent);}
+  // Within a priority, most recent first: a state change seen while the HUD runs
+  // (changedAt, ms) beats one from before launch, then Herdr's state_change_seq,
+  // which rises on every state change in a session. Herdr's order breaks ties.
+  function sorted(agents,unread,changedAt=new Map()){return agents.map((agent,index)=>({agent,index})).sort((a,b)=>priority(a.agent,unread)-priority(b.agent,unread)||(changedAt.get(b.agent.id)||0)-(changedAt.get(a.agent.id)||0)||(Number(b.agent.state_change_seq)||0)-(Number(a.agent.state_change_seq)||0)||a.index-b.index).map(x=>x.agent);}
+  // New means a run finished since you last looked: the same working→idle/done
+  // step that raises a "finished" alert. Not done→idle, which is Herdr saying
+  // you already looked at it there.
+  function finished(before,after){return before?.agent_status==='working'&&['idle','done'].includes(after?.agent_status);}
+  function seen(before,after){return after?.agent_status==='working'||(before?.agent_status==='done'&&after?.agent_status==='idle');}
   function identity(a){return JSON.stringify([a.id,a.terminal_id,a.agent_session||null]);}
   function alerts(previous,current){const old=new Map(previous.map(a=>[a.id,a]));return current.filter(a=>{const b=old.get(a.id);return a.online&&b?.online&&identity(a)===identity(b)&&((a.agent_status==='blocked'&&b.agent_status!=='blocked')||(b.agent_status==='working'&&['idle','done'].includes(a.agent_status)));});}
 
@@ -194,6 +202,13 @@
     return (prompt||reply||'').replace(/\s+/g,' ').trim().slice(0,140);
   }
 
+  // Monogram for a card: first letters of the first two words, or a trailing
+  // number ("Documents 2" → D2). Leading tags like "[1]" and symbols are skipped.
+  function initials(text){
+    const clean=String(text).replace(/^(\s*\[[^\]]*\])+\s*/,''),words=clean.split(/[^\p{L}\p{N}]+/u).filter(Boolean),tail=/\d+$/.exec(clean.trim())?.[0];
+    return ((words[0]?.[0]||'?')+(tail&&words.length>1?tail:words[1]?.[0]||words[0]?.[1]||'')).toUpperCase().slice(0,3);
+  }
+
   // Short relative time for roster cards, like the Claude app: now, 4m, 2h, 3d.
   function ago(then,now){
     const minutes=Math.floor(Math.max(0,now-then)/60000);
@@ -216,5 +231,5 @@
   // answer them, but never dresses Yes up as the obvious choice.
   const RISKY=/\brm\s+-\w*[rf]|\bgit\s+(push\s+.*(--force|-f\b)|reset\s+--hard|clean\s+-\w*f)|\bdrop\s+(table|database)\b|\bmkfs|\bdd\s+if=|\bchmod\s+-R\s+777|\bsudo\b|\btruncate\b|>\s*\/dev\/sd/i;
   function risky(dialog){return !!dialog&&dialog.type==='permission'&&RISKY.test(`${dialog.title}\n${dialog.detail||''}`);}
-  const api={sorted,alerts,summary,parse,identity,pane,labels,preview,ago,chatProviders,extractDialog,risky};if(typeof module!=='undefined')module.exports=api;else root.HUDModel=api;
+  const api={initials,sorted,finished,seen,alerts,summary,parse,identity,pane,labels,preview,ago,chatProviders,extractDialog,risky};if(typeof module!=='undefined')module.exports=api;else root.HUDModel=api;
 })(globalThis);
