@@ -128,7 +128,7 @@ final class HUDApp: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKN
         let glass = NSVisualEffectView(frame:panel.contentView!.bounds)
         glass.material = .hudWindow; glass.blendingMode = .behindWindow; glass.state = .active
         glass.appearance = NSAppearance(named:.darkAqua); glass.autoresizingMask = [.width,.height]
-        let radius: CGFloat = 16, mask = NSImage(size:NSSize(width:radius*2+1,height:radius*2+1),flipped:false) { rect in
+        let radius: CGFloat = 8, mask = NSImage(size:NSSize(width:radius*2+1,height:radius*2+1),flipped:false) { rect in
             NSColor.black.setFill(); NSBezierPath(roundedRect:rect,xRadius:radius,yRadius:radius).fill(); return true
         }
         mask.capInsets = NSEdgeInsets(top:radius,left:radius,bottom:radius,right:radius); mask.resizingMode = .stretch

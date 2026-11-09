@@ -752,3 +752,153 @@ textarea {
 
 /* No programming ligatures (Cascadia Code and others draw === as one glyph). */
 pre, code, kbd, textarea, .md-code, .tool-head, .result-line, .subtitle, .agent-meta, #chips { font-variant-ligatures: none; font-feature-settings: "calt" 0, "liga" 0; }
+
+/* ── WoW Classic frame ────────────────────────────────────────────────────
+   A dark tooltip-style sheet inside a beveled gold rim, gold serif titles,
+   framed cards, and red-and-gold buttons, so the panel sits next to the
+   game's own windows. Drawn entirely in CSS; no game art is used. State
+   colors stay as they are, because they carry meaning. */
+:root {
+  --gold: #ffd100;
+  --gold-hi: #f6e3a1;
+  --gold-mid: #c8a240;
+  --gold-lo: #6b5019;
+  --gold-line: rgba(200, 162, 64, .55);
+  --silver-line: rgba(178, 178, 190, .3);
+  --silver-hi: rgba(210, 210, 220, .5);
+  --ruby-hi: #9c2214;
+  --ruby: #6a120a;
+  --ruby-lo: #3c0804;
+  --display: "Friz Quadrata TT", "Friz Quadrata", "Palatino", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+
+  --bg: rgba(5, 6, 10, .95);
+  --surface: rgba(0, 0, 0, .22);
+  --accent: #e9b949;
+  --accent-hi: #ffd86b;
+  --accent-ink: #1d1203;
+  --accent-soft: rgba(233, 185, 73, .14);
+  --accent-line: rgba(233, 185, 73, .55);
+
+  --radius-panel: 8px;
+  --radius-lg: 5px;
+  --radius: 4px;
+  --radius-sm: 4px;
+}
+:root.glass { --bg: rgba(5, 6, 10, .82); --surface: rgba(0, 0, 0, .2); }
+
+/* The rim sits above everything so headers and panes never cover it. In the
+   apps the page is the panel; the mockup page wraps the panel in .frame. */
+body { border: 0; box-shadow: none; }
+body:not(.mockup)::after, .mockup .frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+  border-radius: var(--radius-panel);
+  box-shadow:
+    inset 0 0 0 1px #050302,
+    inset 0 0 0 2px var(--gold-lo),
+    inset 0 0 0 3px var(--gold-hi),
+    inset 0 0 0 4px var(--gold-mid),
+    inset 0 0 0 5px var(--gold-lo),
+    inset 0 0 0 6px rgba(0, 0, 0, .85),
+    inset 0 0 26px rgba(0, 0, 0, .7);
+}
+/* Small gold studs in the corners, like a dialog frame's rivets. */
+body:not(.mockup)::before, .mockup .frame::before {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  z-index: 51;
+  pointer-events: none;
+  --stud: radial-gradient(circle, var(--gold-hi) 0 1.5px, var(--gold-mid) 2px 3px, var(--gold-lo) 3.5px 4px, transparent 4.5px);
+  background: var(--stud) top left / 10px 10px no-repeat, var(--stud) top right / 10px 10px no-repeat, var(--stud) bottom left / 10px 10px no-repeat, var(--stud) bottom right / 10px 10px no-repeat;
+}
+
+/* Title bar: dark band, gold title, and a gold rule that fades at the ends. */
+header {
+  padding-left: var(--space-5);
+  border-bottom: 0;
+  background: linear-gradient(rgba(70, 52, 20, .32), rgba(0, 0, 0, .1));
+  box-shadow: none;
+}
+header::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--gold-lo) 8%, var(--gold-mid) 30%, var(--gold-hi) 50%, var(--gold-mid) 70%, var(--gold-lo) 92%, transparent);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, .8);
+}
+.mark {
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #3a2a10, #120c04 70%);
+  box-shadow: 0 0 0 1px #000, 0 0 0 2px var(--gold-mid), 0 0 0 3px var(--gold-lo), 0 2px 8px rgba(0, 0, 0, .6);
+  color: var(--gold);
+  font: 700 14px/1 var(--display);
+  text-shadow: 0 1px 1px #000;
+}
+.word { font: 700 17px/1 var(--display); letter-spacing: .02em; color: var(--gold); text-shadow: 0 1px 1px #000, 0 0 8px rgba(255, 209, 0, .15); }
+.tag { border-color: var(--gold-line); background: rgba(0, 0, 0, .35); color: var(--gold-hi); font-family: var(--display); }
+
+.pill { border-radius: var(--radius); border-color: var(--silver-line); background: linear-gradient(rgba(255, 255, 255, .06), rgba(0, 0, 0, .25)); }
+.pill:hover { border-color: var(--gold-line); }
+
+/* Roster: dark pane with a gold seam to the conversation. */
+aside { background: linear-gradient(rgba(0, 0, 0, .28), rgba(0, 0, 0, .14)), var(--surface); padding-left: var(--space-3); }
+#divider { width: 2px; background: linear-gradient(transparent, var(--gold-lo) 12%, var(--gold-mid) 50%, var(--gold-lo) 88%, transparent); box-shadow: 1px 0 0 rgba(0, 0, 0, .7); }
+#divider:hover, #divider:focus { background: var(--gold); }
+
+/* Edit boxes: black wells with a silver edge that turns gold on focus. */
+.search, .input { border-color: var(--silver-line); background: rgba(0, 0, 0, .55); box-shadow: inset 0 1px 3px rgba(0, 0, 0, .7); }
+.search:focus-within, .input:focus-within { border-color: var(--gold-mid); box-shadow: inset 0 1px 3px rgba(0, 0, 0, .7), 0 0 10px rgba(233, 185, 73, .2); }
+
+/* Group headings read like quest-log headers. */
+.group { font-family: var(--display); font-weight: 700; font-size: 12px; letter-spacing: .08em; color: var(--gold-mid); }
+.group::after { background: linear-gradient(90deg, var(--gold-mid), transparent); opacity: .45; }
+.group-count { border-radius: var(--radius-sm); font-family: var(--font); }
+
+/* Cards are tooltip boxes; the selected one gets the gold quest highlight. */
+.agent { border-color: rgba(178, 178, 190, .14); background: rgba(0, 0, 0, .3); }
+.agent:hover { border-color: var(--silver-hi); background: rgba(255, 255, 255, .04); box-shadow: inset 0 0 12px rgba(255, 255, 255, .03); }
+.agent.selected { border-color: var(--gold-mid); background: linear-gradient(rgba(255, 209, 0, .1), rgba(255, 209, 0, .03)); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .6), inset 0 0 18px rgba(255, 209, 0, .08), 0 0 10px rgba(255, 209, 0, .12); }
+.agent.selected::before { background: var(--gold); box-shadow: 0 0 8px rgba(255, 209, 0, .7); }
+.agent.selected .agent-name { color: var(--gold); }
+.agent-icon { border-radius: var(--radius); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .5), 0 0 0 1px var(--gold-lo); }
+.agent-icon .dot { border-color: #07080b; }
+.agent-key { border-radius: var(--radius-sm); }
+.agent-wrap { border-radius: var(--radius-lg); }
+
+/* Conversation title in gold, like a quest title. */
+.conversation-header { border-bottom-color: rgba(200, 162, 64, .22); }
+.conversation-header strong { font-family: var(--display); font-weight: 700; letter-spacing: .01em; color: var(--gold); text-shadow: 0 1px 1px #000; }
+
+/* Chat / Terminal read like frame tabs. */
+.switch { border-radius: var(--radius); border-color: var(--silver-line); background: rgba(0, 0, 0, .5); }
+.switch button { border-radius: 3px; font-family: var(--display); }
+.switch button[aria-pressed=true] { color: var(--gold); background: linear-gradient(var(--ruby-hi), var(--ruby) 60%, var(--ruby-lo)); box-shadow: inset 0 0 0 1px var(--gold-lo), inset 0 1px 0 rgba(255, 220, 160, .25); }
+
+/* Red-and-gold panel buttons. */
+#send, .quick-answer.primary {
+  color: var(--gold);
+  background: linear-gradient(var(--ruby-hi), var(--ruby) 55%, var(--ruby-lo));
+  border: 1px solid var(--gold-mid);
+  box-shadow: inset 0 1px 0 rgba(255, 200, 140, .3), inset 0 0 0 1px rgba(0, 0, 0, .35), 0 1px 3px rgba(0, 0, 0, .7);
+  text-shadow: 0 1px 1px #000;
+}
+#send { border-radius: var(--radius); }
+#send:hover:not(:disabled), .quick-answer.primary:hover:not(:disabled) { filter: brightness(1.18); color: var(--gold-hi); border-color: var(--gold-hi); background: linear-gradient(var(--ruby-hi), var(--ruby) 55%, var(--ruby-lo)); box-shadow: inset 0 1px 0 rgba(255, 200, 140, .35), 0 0 10px rgba(255, 209, 0, .3); }
+#send:disabled { color: #8d826a; background: linear-gradient(#2c2a27, #171614); border-color: #4a4232; box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06); }
+.quick-answer { border-radius: var(--radius); }
+.quick-answer.primary kbd { color: var(--gold-hi); background: rgba(0, 0, 0, .35); border-color: var(--gold-lo); }
+
+kbd { border-radius: 3px; border-color: rgba(200, 162, 64, .35); border-bottom-color: rgba(0, 0, 0, .6); background: linear-gradient(#2a2418, #15120c); color: var(--gold-hi); }
+
+#chips .chip.model { color: var(--gold); }
+#composer { border-top-color: rgba(200, 162, 64, .22); background: linear-gradient(rgba(0, 0, 0, .1), rgba(0, 0, 0, .3)); }
+
+::-webkit-scrollbar-thumb { background: linear-gradient(90deg, var(--gold-lo), var(--gold-mid), var(--gold-lo)); border-radius: 2px; border: 3px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: linear-gradient(90deg, var(--gold-mid), var(--gold-hi), var(--gold-mid)); background-clip: padding-box; }

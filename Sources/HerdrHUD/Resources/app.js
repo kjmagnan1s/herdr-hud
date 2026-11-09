@@ -30,7 +30,7 @@ function badge(){
 // most urgent first. The host shows it only when the setting is on.
 let stripSignature='';
 function strip(blocked){
-  const sorted=HUDModel.sorted(agents,unread),tiles=GROUPS.flatMap(([g])=>sorted.filter(a=>group(a)===g)).slice(0,8).map(a=>({id:a.id,name:name(a),initials:initials(name(a)),hue:hue(name(a)),state:stateClass(a)}));
+  const sorted=HUDModel.sorted(agents,unread,changedAt),tiles=GROUPS.flatMap(([g])=>sorted.filter(a=>group(a)===g)).slice(0,8).map(a=>({id:a.id,name:name(a),initials:initials(name(a)),hue:hue(name(a)),state:stateClass(a)}));
   const working=agents.filter(a=>a.online&&a.agent_status==='working').length,label=blocked?`${blocked} need${blocked===1?'s':''} you`:working?`${working} working`:'';
   const signature=JSON.stringify([tiles,label]);if(signature===stripSignature)return;stripSignature=signature;post({op:'strip',agents:tiles,label});
 }
@@ -49,7 +49,7 @@ function notify(updates){
 // A stable hue per agent name, so each agent keeps its own colored tile.
 // FNV-1a plus a final mix, so names that differ only by a digit get far-apart hues.
 function hue(text){let h=2166136261;for(const c of String(text))h=Math.imul(h^c.charCodeAt(0),16777619);h=Math.imul(h^(h>>>15),2246822507);h^=h>>>13;return (h>>>0)%360;}
-function initials(text){const words=String(text).split(/[\s_.-]+/).filter(Boolean);const tail=/\d+$/.exec(text)?.[0];return ((words[0]?.[0]||'?')+(tail||words[1]?.[0]||words[0]?.[1]||'')).toUpperCase().slice(0,3);}
+function initials(text){return HUDModel.initials(text);}
 // Roster cards are grouped by what they need from you, like a friends list:
 // needs you, new, working, ready, offline. Each card shows a state-tinted
 // monogram, the title, where it runs, how long ago its state changed, and the
@@ -64,7 +64,7 @@ function renderSummary(){
 }
 function renderRoster(){
   $('count').textContent=agents.length;const roster=$('roster'),scroll=roster.scrollTop,multiMachine=new Set(agents.map(a=>a.machine_id)).size>1;
-  const items=HUDModel.sorted(agents,unread).filter(a=>`${name(a)} ${a.workspace_label} ${a.machine_label} ${a.agent}`.toLowerCase().includes(filter));
+  const items=HUDModel.sorted(agents,unread,changedAt).filter(a=>`${name(a)} ${a.workspace_label} ${a.machine_label} ${a.agent}`.toLowerCase().includes(filter));
   order=GROUPS.flatMap(([g])=>items.filter(a=>group(a)===g));
   const nodes=[];let index=0;
   for(const [g,label] of GROUPS){
@@ -190,7 +190,7 @@ function send(){if($('send').disabled)return;const id=selected,message=$('prompt
 window.receive=({type,data})=>{
   if(type==='roster'){
     const before=agents;agents=data.agents||[];
-    if(baseline)for(const a of agents){const old=before.find(b=>b.id===a.id);if(old&&a.online&&old.online&&old.agent_status!==a.agent_status)unread.add(a.id);if(!old||old.agent_status!==a.agent_status)changedAt.set(a.id,Date.now());}
+    if(baseline)for(const a of agents){const old=before.find(b=>b.id===a.id);if(old&&a.online&&old.online){if(HUDModel.finished(old,a))unread.add(a.id);else if(HUDModel.seen(old,a))unread.delete(a.id);}if(!old||old.agent_status!==a.agent_status)changedAt.set(a.id,Date.now());}
     const updates=baseline?HUDModel.alerts(before,agents):[];baseline=true;
     for(const a of agents){if(a.agent_status==='working'&&!since.has(a.id))since.set(a.id,Date.now());if(a.agent_status!=='working')since.delete(a.id);}
     const valid=new Set(agents.map(a=>a.id));names=HUDModel.labels(agents);
