@@ -39,8 +39,18 @@ for(const platform of ['mac','windows']){
     assert.equal(h.messages.filter(m=>m.op==='copy').length,1,'prompt box, right click, and empty selections never copy');
   });
 }
-test('a working agent accepts one prompt from the composer',()=>{
-  const h=harness('mac');vm.runInContext("agents=[{id:'fixture',online:true,agent_status:'working',agent:'claude'}];",h.context);h.reset('queue this');
-  assert.equal(h.key(),true);assert.equal(h.messages.filter(m=>m.op==='prompt').length,1);h.key();assert.equal(h.messages.filter(m=>m.op==='prompt').length,1);
-  vm.runInContext("agents=[{id:'fixture',online:true,agent_status:'blocked',agent:'claude'}];sending=false;",h.context);h.reset('not now');h.key();assert.equal(h.messages.filter(m=>m.op==='prompt').length,0,'blocked agents still refuse');
+test('prompts for a working agent queue, then send once when it finishes',()=>{
+  const h=harness('mac'),sent=()=>h.messages.filter(m=>m.op==='prompt');
+  vm.runInContext("agents=[{id:'fixture',online:true,agent_status:'working',agent:'claude'}];",h.context);
+  h.reset('first');h.key();h.reset('second');h.key();
+  assert.equal(sent().length,0,'nothing is typed into a working agent');assert.equal(h.input.value,'');
+  vm.runInContext("agents=[{id:'fixture',online:true,agent_status:'blocked',agent:'claude'}];flushQueued();",h.context);assert.equal(sent().length,0,'a blocked agent keeps the queue');
+  vm.runInContext("agents=[{id:'fixture',online:true,agent_status:'done',agent:'claude'}];flushQueued();flushQueued();",h.context);
+  assert.equal(sent().length,1,'exactly one send');assert.equal(sent()[0].message,'first\n\nsecond');
+});
+test('Up in an empty box takes a queued prompt back to edit',()=>{
+  const h=harness('mac');vm.runInContext("agents=[{id:'fixture',online:true,agent_status:'working',agent:'claude'}];",h.context);
+  h.reset('fix the footer');h.key();h.input.value='';let prevented=false;h.input.onkeydown({key:'ArrowUp',preventDefault(){prevented=true;}});
+  assert.equal(prevented,true);assert.equal(h.input.value,'fix the footer');
+  vm.runInContext("agents=[{id:'fixture',online:true,agent_status:'idle',agent:'claude'}];flushQueued();",h.context);assert.equal(h.messages.filter(m=>m.op==='prompt').length,0);
 });

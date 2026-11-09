@@ -27,8 +27,8 @@ await Test("idle prompts go once, with literal Unicode multiline stdin", async (
     string prompt = "hello 'quoted' $(do-not-run) `literal`\n世界";
     await client.Prompt(id, prompt); Check(fake.Sends == 1 && !string.Join(" ",fake.Last!.Arguments).Contains(prompt) && JsonNode.Parse(fake.Last.Input!)!["text"]!.GetValue<string>() == prompt, "Prompt changed or duplicated");
 });
-await Test("blocked and unknown states refuse sends", async () => {
-    foreach (string state in new[] { "blocked", "unknown", "" }) { var fake = new Fake(); var client = fake.Client(); var id = await fake.ID(client); fake.Status = state; await Refused(() => client.Prompt(id, "hello"), "busy"); Check(fake.Sends == 0, "Sent to busy agent"); }
+await Test("busy, blocked and unknown states refuse sends", async () => {
+    foreach (string state in new[] { "working", "blocked", "unknown", "" }) { var fake = new Fake(); var client = fake.Client(); var id = await fake.ID(client); fake.Status = state; await Refused(() => client.Prompt(id, "hello"), "busy"); Check(fake.Sends == 0, "Sent to busy agent"); }
 });
 await Test("replaced pane identity refuses prompts at once and reads after the next snapshot", async () => {
     var fake = new Fake(); var client = fake.Client(); var id = await fake.ID(client); fake.Terminal = "replacement";

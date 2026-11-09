@@ -64,7 +64,7 @@ def main():
     current=rpc(path,'agent.get',{'target':expected['pane_id']}).get('agent',{})
     for key in ['pane_id','terminal_id','workspace_id','agent','agent_session']:
         if current.get(key)!=expected.get(key): raise RuntimeError('Agent changed')
-    if current.get('agent_status') not in ['idle','done','working']: raise RuntimeError('Agent is not ready')
+    if current.get('agent_status') not in ['idle','done']: raise RuntimeError('Agent is not ready')
     result=rpc(path,'agent.prompt',{'target':expected['pane_id'],'text':text})
     if result.get('type')!='agent_prompted' or result.get('agent',{}).get('terminal_id')!=expected['terminal_id']: raise RuntimeError('Invalid prompt acknowledgement')
     print(json.dumps({'result':result}))
